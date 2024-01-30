@@ -1,0 +1,9 @@
+@Capitalead_HostAddress = http://localhost:5298
+
+GET {{Capitalead_HostAddress}}/api/v1/run
+Accept: application/json
+###
+
+GET {{Capitalead_HostAddress}}/api/v1/remove-duplicates
+Accept: application/json
+###
