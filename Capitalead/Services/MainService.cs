@@ -1,3 +1,5 @@
+using ILoggerFactory = Microsoft.Extensions.Logging.ILoggerFactory;
+
 namespace Capitalead.Services;
 
 public class MainService
@@ -5,22 +7,21 @@ public class MainService
     private readonly LobstrService _lobstrService;
     private readonly NoCRMService _crmService;
     private readonly ILogger<MainService> _logger;
-    private readonly CrmDataProcessingService _crmDataProcessingService;
+    private readonly IServiceProvider _serviceProvider;
 
-    public MainService(LobstrService lobstrService, NoCRMService crmService, ILogger<MainService> logger,
-        CrmDataProcessingService crmDataProcessingService)
+    public MainService(LobstrService lobstrService, NoCRMService crmService, ILogger<MainService> logger, IServiceProvider serviceProvider)
     {
         _lobstrService = lobstrService;
         _crmService = crmService;
         _logger = logger;
-        _crmDataProcessingService = crmDataProcessingService;
+        _serviceProvider = serviceProvider;
     }
 
     public async Task Start()
     {
         var uncreatedClustersIdsAndNames = await GetUncreatedCRMListsForClusters();
         var isUncreatedListsExists = uncreatedClustersIdsAndNames.Any();
-
+        
         if (isUncreatedListsExists)
         {
             foreach (var keyvalue in uncreatedClustersIdsAndNames)
@@ -32,7 +33,13 @@ public class MainService
 
         var lists = await _crmService.ListTheProspectingLists();
         await Parallel.ForEachAsync(lists.Keys, CancellationToken.None,
-            async (listId, _) => { await _crmDataProcessingService.Run(listId); });
+            async (listId, _) =>
+            {
+                await using var scope = _serviceProvider.CreateAsyncScope();
+                var crmDataProcessingService = scope.ServiceProvider.GetRequiredService<CrmDataProcessingService>();
+                await crmDataProcessingService.Run(listId);
+            });
+        //await _crmDataProcessingService.Run(lists.Keys.First());
         _logger.LogInformation("Main service work done");
     }
 

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
 
 namespace Capitalead.Services;
@@ -13,8 +14,8 @@ public class NoCRMService
     private const int MAX_ROW_NUMBER_PER_REQUEST = 100;
     private const int CLUSTER_ID_LENGTH = 32;
 
-    public const string NOCRM_API_URL = "https://capitalead26.nocrm.io/api/v2";
-    private const string SPREADSHEETS_URL = "spreadsheets/";
+    public const string NOCRM_API_URL = "https://capitalead26.nocrm.io/";
+    private const string SPREADSHEETS_URL = "api/v2/spreadsheets";
 
     public NoCRMService(ILogger<NoCRMService> logger, IHttpClientFactory httpClientFactory,
         IConfiguration configuration)
@@ -24,9 +25,9 @@ public class NoCRMService
         _configuration = configuration;
     }
 
-    public async Task UploadDataToCRM(JsonArray apartments, string listId)
+    public async Task UploadDataToCRM(JsonNode[] apartments, string listId)
     {
-        _logger.LogInformation("Find unloaded data for list {ListId}, rows count {Count}", listId, apartments.Count);
+        _logger.LogInformation("Find unloaded data for list {ListId}, rows count {Count}", listId, apartments.Length);
         foreach (var chunk in apartments.Chunk(MAX_ROW_NUMBER_PER_REQUEST))
         {
             JsonNode jsonObject = new JsonObject();
@@ -48,7 +49,7 @@ public class NoCRMService
 
         try
         {
-            var response = await client.PostAsJsonAsync(SPREADSHEETS_URL + listId + "/rows", body);
+            var response = await client.PostAsJsonAsync($"{SPREADSHEETS_URL}/{listId}/rows", body);
             response.EnsureSuccessStatusCode();
             if (response.IsSuccessStatusCode)
             {
@@ -100,7 +101,7 @@ public class NoCRMService
     public async Task<IDictionary<string, string>> ListTheProspectingLists()
     {
         var client = GetClient();
-        var response = await client.GetAsync(SPREADSHEETS_URL);
+        var response = await client.GetAsync($"{SPREADSHEETS_URL}?limit=1000");
         response.EnsureSuccessStatusCode();
         if (response.IsSuccessStatusCode)
         {
@@ -109,10 +110,10 @@ public class NoCRMService
             var listsNames = new Dictionary<string, string>();
             foreach (var sheet in sheets)
             {
-                var clusterIdTag = sheet.Tags.First();
-                if (clusterIdTag.Length == CLUSTER_ID_LENGTH && !clusterIdTag.Contains(" "))
+                var clusterIdTag = sheet.Tags.FirstOrDefault();
+                if (clusterIdTag?.Length == CLUSTER_ID_LENGTH && !clusterIdTag.Contains(" "))
                 {
-                    listsNames.Add(sheet.Id, clusterIdTag);
+                    listsNames.Add(sheet.Id.ToString(), clusterIdTag);
                 }
             }
 
@@ -127,7 +128,7 @@ public class NoCRMService
     public async Task<JsonNode> RetrieveTheProspectingList(String listId)
     {
         var client = GetClient();
-        var response = await client.GetAsync(SPREADSHEETS_URL + listId);
+        var response = await client.GetAsync($"{SPREADSHEETS_URL}/{listId}");
         response.EnsureSuccessStatusCode();
         if (response.IsSuccessStatusCode)
         {
@@ -145,4 +146,4 @@ public class NoCRMService
     private HttpClient GetClient() => _httpClientFactory.CreateClient(nameof(NoCRMService));
 }
 
-public record Spreadsheet(string Id, string[] Tags, string Title);
+public record Spreadsheet(long Id, string[] Tags, string Title);

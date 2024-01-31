@@ -5,29 +5,30 @@ namespace Capitalead.Services;
 
 public static class Helper
 {
-    public static JsonArray TransformJSON(JsonArray jsonArray) {
-        if (!jsonArray.Any()) return jsonArray;
+    public static JsonNode[] TransformJSON(JsonNode[] jsonArray) {
+        if (!jsonArray.Any())
+            return Array.Empty<JsonNode>();
     
-        JsonArray transformed = new JsonArray();
+        var transformed = new List<JsonNode>();
         foreach (var json in jsonArray)
         {
             if (json == null)
                 continue;
-            var apartments = new List<JsonNode>()
+            var apartments = new JsonArray()
             {
-                json["neighborhood"] ?? json["city"] ?? string.Empty,
-                DateTime.ParseExact(json["scraping_time"].GetValue<string>().Substring(0, 10), "dd/MM/yyyy", CultureInfo.InvariantCulture),
-                json["breadcrumb"] ?? json["real_estate_type"] ?? string.Empty,
+                json["neighborhood"]?.DeepClone() ?? json["city"]?.DeepClone() ?? string.Empty,
+                DateTime.TryParse(json["scraping_time"]?.GetValue<string>().Substring(0, 10) ?? string.Empty, out var date) ? date : "",
+                json["breadcrumb"]?.DeepClone() ?? json["real_estate_type"]?.DeepClone() ?? string.Empty,
                 json["phone"]?.GetValue<string>().Replace(".", "") ?? string.Empty,
-                json["rooms"] ?? json["room_count"] ?? string.Empty,
-                json["size"] ?? json["area"] ?? string.Empty,
-                json["energy"] ??json["DPE_string"] ?? string.Empty
+                json["rooms"]?.DeepClone() ?? json["room_count"]?.DeepClone() ?? string.Empty,
+                json["size"]?.DeepClone() ?? json["area"]?.DeepClone() ?? string.Empty,
+                json["energy"]?.DeepClone() ?? json["DPE_string"]?.DeepClone() ?? string.Empty
             };
     
             transformed.Add(apartments);
         }
     
-        return transformed;
+        return transformed.ToArray();
     }
 
     public static JsonObject BuildJsonBodyForCreatingProspList(string listTitle, string[] tags, string nocrmUserEmail) {

@@ -16,7 +16,12 @@ public class AppDatabase : DbContext
         {
             u.HasIndex(x => x.Phone).IsUnique();
         });
+        modelBuilder.Entity<ProcessedRun>(u =>
+        {
+            u.HasIndex(x => x.RunId).IsUnique();
+        });
     }
 
     public DbSet<Prospect> Prospects { get; set; }
+    public DbSet<ProcessedRun> ProcessedRuns { get; set; }
 }

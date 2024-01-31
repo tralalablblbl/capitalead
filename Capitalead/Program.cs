@@ -89,8 +89,9 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.MapGet("/api/v1/run", async ([FromServices]MainService mainService, [FromServices]ILogger logger) =>
+app.MapGet("/api/v1/run", async ([FromServices]MainService mainService, [FromServices]ILoggerFactory loggerFactory) =>
     {
+        var logger = loggerFactory.CreateLogger("api/v1/run");
         logger.LogInformation("Started uploading script...");
         await mainService.Start();
         logger.LogInformation("Successfully uploaded all data to new prospecting lists!");

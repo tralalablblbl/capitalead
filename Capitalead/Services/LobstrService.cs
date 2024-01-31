@@ -7,12 +7,12 @@ public class LobstrService
     private ILogger<LobstrService> _logger;
     private readonly IHttpClientFactory _httpClientFactory;
 
-    private const string LOBSTR_GET_RESULT_URL = "results?page=";
+    private const string LOBSTR_GET_RESULT_URL = "v1/results";
 
-    private const string LOBSTR_LIST_CLUSTERS_URL = "clusters";
+    private const string LOBSTR_LIST_CLUSTERS_URL = "v1/clusters";
 
-    private const string LOBSTR_LIST_RUNS_URL = "runs";
-    public const string LOBSTR_BASE_URL = "https://api.lobstr.io/v1";
+    private const string LOBSTR_LIST_RUNS_URL = "v1/runs";
+    public const string LOBSTR_BASE_URL = "https://api.lobstr.io/";
 
     public LobstrService(ILogger<LobstrService> logger, IHttpClientFactory httpClientFactory)
     {
@@ -32,7 +32,6 @@ public class LobstrService
     public async Task<IDictionary<string, string>> GetClusterIdsAndNames()
     {
         var clusters = await ListClusters();
-        ;
 
         _logger.LogInformation("Successfully fetch clusters id. Size: {Size}", clusters.Count);
         return clusters;
@@ -48,16 +47,25 @@ public class LobstrService
 
     private async Task<JsonNode[]> ListAllDataFromRun(string runId)
     {
-
         var client = GetClient();
 
         try
         {
-            var response = await client.GetAsync(LOBSTR_GET_RESULT_URL + 1 + "&run=" + runId + "&page_size=" + 100);
-            response.EnsureSuccessStatusCode();
-            var runs = await response.Content.ReadFromJsonAsync<ListData<JsonNode>>() ??
-                       throw new ArgumentNullException();
-            return runs.Data;
+            var result = new List<JsonNode>();
+            var page = 0;
+            var hasMoreData = false;
+            do
+            {
+                page++;
+                var response = await client.GetAsync($"{LOBSTR_GET_RESULT_URL}?page={page}&run={runId}&page_size=400");
+                response.EnsureSuccessStatusCode();
+                var runs = await response.Content.ReadFromJsonAsync<ListData<JsonNode>>() ??
+                           throw new ArgumentNullException();
+                result.AddRange(runs.Data);
+                hasMoreData = result.Count < runs.Count;
+            } while (hasMoreData);
+
+            return result.ToArray();
         }
         catch (Exception ex)
         {
@@ -91,10 +99,22 @@ public class LobstrService
 
         try
         {
-            var response = await client.GetAsync(LOBSTR_LIST_RUNS_URL + "?cluster=" + id);
-            response.EnsureSuccessStatusCode();
-            var runs = await response.Content.ReadFromJsonAsync<ListData<Run>>() ?? throw new ArgumentNullException();
-            return runs.Data.Select(r => r.Id).ToArray();
+            var result = new List<string>();
+            var page = 0;
+            var hasMoreData = false;
+            do
+            {
+                page++;
+                var response = await client.GetAsync($"{LOBSTR_LIST_RUNS_URL}?cluster={id}&limit=120&page={page}");
+                response.EnsureSuccessStatusCode();
+                var runs = await response.Content.ReadFromJsonAsync<ListData<Run>>() ??
+                           throw new ArgumentNullException();
+                var ids = runs.Data.Select(r => r.Id).ToArray();
+                result.AddRange(ids);
+                hasMoreData = result.Count < runs.Count;
+            } while (hasMoreData);
+
+            return result.ToArray();
         }
         catch (Exception ex)
         {

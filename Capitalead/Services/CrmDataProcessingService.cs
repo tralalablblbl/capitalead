@@ -42,9 +42,9 @@ public class CrmDataProcessingService
         }
     }
 
-    private async Task<JsonArray> FindUnloadedClusterDataForList(String crmListId)
+    private async Task<JsonNode[]> FindUnloadedClusterDataForList(String crmListId)
     {
-        var unloadedData = new JsonArray();
+        var unloadedData = new Dictionary<string, JsonNode>();
         var dataSet = new HashSet<string>();
         var prospectingListData = await _crmService.RetrieveTheProspectingList(crmListId);
         foreach (var json in prospectingListData["spreadsheet_rows"].AsArray())
@@ -55,12 +55,19 @@ public class CrmDataProcessingService
         var listTagClusterId = prospectingListData["tags"].AsArray()[CLUSTER_ID_TAG_POSITION].GetValue<string>();
 
         var runIds = await _lobstrService.GetRunsFromCluster(listTagClusterId);
-        foreach (var runId in runIds)
+        var dbRuns = await _database.ProcessedRuns.Where(r => runIds.Contains(r.RunId)).Select(r => r.RunId)
+            .ToArrayAsync();
+        var newRuns = runIds.Except(dbRuns).ToArray();
+
+        newRuns = newRuns.Take(3).ToArray();
+
+        var newProcessedRuns = new List<ProcessedRun>();
+        foreach (var runId in newRuns)
         {
             try
             {
                 var records = await _lobstrService.GetRecordsFromRun(runId);
-
+                var runData = new Dictionary<string, JsonNode>();
                 foreach (var json in records)
                 {
                     var phone = json["phone"]?.GetValue<string>();
@@ -69,14 +76,28 @@ public class CrmDataProcessingService
                         continue;
                     }
 
-                    if (await _database.Prospects.AnyAsync(u => u.Phone == phone))
-                    {
-                        continue;
-                    }
-
-                    unloadedData.Add(json);
-
+                    runData.TryAdd(phone, json);
                 }
+                var allPhones = runData.Keys;
+                var dbPhones = await _database.Prospects
+                    .Where(u => allPhones.Contains(u.Phone))
+                    .Select(u => u.Phone)
+                    .Distinct()
+                    .ToDictionaryAsync(u => u);
+                var clearData = runData
+                    .Where(kv => !dbPhones.ContainsKey(kv.Key))
+                    .ToList();
+                foreach (var pair in clearData)
+                {
+                    unloadedData.TryAdd(pair.Key, pair.Value);
+                }
+                newProcessedRuns.Add(new ProcessedRun()
+                {
+                    Id = Guid.NewGuid(),
+                    ProcessedDate = DateTime.UtcNow,
+                    ProspectsCount = clearData.Count,
+                    RunId = runId
+                });
             }
             catch (Exception e)
             {
@@ -85,11 +106,14 @@ public class CrmDataProcessingService
             }
         }
 
+        await _database.ProcessedRuns.AddRangeAsync(newProcessedRuns);
+        await _database.SaveChangesAsync();
+
         _logger.LogInformation("return data");
-        return Helper.TransformJSON(unloadedData);
+        return Helper.TransformJSON(unloadedData.Values.ToArray());
     }
 
-    private async Task SaveApartmentsToDatabase(JsonArray unloadedApartments, string listId)
+    private async Task SaveApartmentsToDatabase(JsonNode[] unloadedApartments, string listId)
     {
         _logger.LogInformation("Start saving unloaded data from list {ListId} in database", listId);
         foreach (var chunk in unloadedApartments.Chunk(200))
@@ -99,20 +123,21 @@ public class CrmDataProcessingService
             foreach (var node in chunk)
             {
                 var apart = node.AsArray();
-                var date = DateTime.ParseExact(apart[1].GetValue<string>(), "dd/MM/yyyy", CultureInfo.InvariantCulture);
+                var date = apart[1].GetValue<DateTime?>() ?? DateTime.UtcNow;
                 var apartment = new Prospect();
                 apartment.Neighbourhood = apart[0].GetValue<string>();
                 apartment.ParsingDate = date;
                 apartment.RealEstateType = apart[2].GetValue<string>();
                 apartment.Phone = apart[3].GetValue<string>();
-                apartment.Rooms = apart[4].GetValue<string>();
-                apartment.Size = apart[5].GetValue<string>();
+                apartment.Rooms = apart[4].ToString();
+                apartment.Size = apart[5].ToString();
                 apartment.Energy = apart[6].GetValue<string>();
                 prospects.Add(apartment);
             }
 
 
             await _database.Prospects.AddRangeAsync(prospects);
+            await _database.SaveChangesAsync();
             _logger.LogInformation("Successfully uploaded slice of data in database");
         }
     }

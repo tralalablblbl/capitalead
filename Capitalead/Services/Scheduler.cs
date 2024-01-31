@@ -6,16 +6,28 @@ namespace Capitalead.Services;
 public class Scheduler : IHostedService
 {
     private readonly IRecurringJobManager _recurringJobManager;
+    private readonly IConfiguration _configuration;
+    private readonly ILogger<Scheduler> _logger;
 
-    public Scheduler(IRecurringJobManager recurringJobManager)
+    public Scheduler(IRecurringJobManager recurringJobManager, IConfiguration configuration, ILogger<Scheduler> logger)
     {
         _recurringJobManager = recurringJobManager;
+        _configuration = configuration;
+        _logger = logger;
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        if (!Debugger.IsAttached)
-            _recurringJobManager.AddOrUpdate<MainService>("easyjob", mainService => mainService.Start(), "0 0 9 * * *");
+        var cron = _configuration["run-migration-cron"];
+        if (!string.IsNullOrEmpty(cron) && cron.ToLower() != "none")
+        {
+            _recurringJobManager.AddOrUpdate<MainService>("easyjob", mainService => mainService.Start(), cron);
+            _logger.LogInformation("Scheduled run migration job with cron {Cron}", cron);
+        }
+        else
+        {
+            _logger.LogInformation("Run migration job was not scheduled because 'run-migration-cron' is not configured");
+        }
         return Task.CompletedTask;
     }
 
