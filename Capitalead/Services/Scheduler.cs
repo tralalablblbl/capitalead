@@ -21,7 +21,7 @@ public class Scheduler : IHostedService
         var cron = _configuration["run-migration-cron"];
         if (!string.IsNullOrEmpty(cron) && cron.ToLower() != "none")
         {
-            _recurringJobManager.AddOrUpdate<MainService>("easyjob", mainService => mainService.Start(), cron);
+            _recurringJobManager.AddOrUpdate<MainService>("easyjob", mainService => mainService.StartMigration(), cron);
             _logger.LogInformation("Scheduled run migration job with cron {Cron}", cron);
         }
         else

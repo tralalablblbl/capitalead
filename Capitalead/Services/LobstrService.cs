@@ -20,7 +20,7 @@ public class LobstrService
         _httpClientFactory = httpClientFactory;
     }
 
-    public async Task<string[]> GetRunsFromCluster(String clusterId)
+    public async Task<string[]> GetRunsFromCluster(string clusterId)
     {
         var runIds = await ListRunsByClusterId(clusterId);
 

@@ -24,4 +24,5 @@ public class AppDatabase : DbContext
 
     public DbSet<Prospect> Prospects { get; set; }
     public DbSet<ProcessedRun> ProcessedRuns { get; set; }
+    public DbSet<DuplicateProspect> DuplicateProspects { get; set; }
 }

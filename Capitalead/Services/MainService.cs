@@ -1,15 +1,15 @@
-using ILoggerFactory = Microsoft.Extensions.Logging.ILoggerFactory;
+using System.Collections.Concurrent;
 
 namespace Capitalead.Services;
 
 public class MainService
 {
     private readonly LobstrService _lobstrService;
-    private readonly NoCRMService _crmService;
+    private readonly NoCrmService _crmService;
     private readonly ILogger<MainService> _logger;
     private readonly IServiceProvider _serviceProvider;
 
-    public MainService(LobstrService lobstrService, NoCRMService crmService, ILogger<MainService> logger, IServiceProvider serviceProvider)
+    public MainService(LobstrService lobstrService, NoCrmService crmService, ILogger<MainService> logger, IServiceProvider serviceProvider)
     {
         _lobstrService = lobstrService;
         _crmService = crmService;
@@ -17,7 +17,7 @@ public class MainService
         _serviceProvider = serviceProvider;
     }
 
-    public async Task Start()
+    public async Task StartMigration()
     {
         var uncreatedClustersIdsAndNames = await GetUncreatedCRMListsForClusters();
         var isUncreatedListsExists = uncreatedClustersIdsAndNames.Any();
@@ -37,7 +37,7 @@ public class MainService
             {
                 await using var scope = _serviceProvider.CreateAsyncScope();
                 var crmDataProcessingService = scope.ServiceProvider.GetRequiredService<CrmDataProcessingService>();
-                await crmDataProcessingService.Run(listId);
+                await crmDataProcessingService.RunMigration(listId);
             });
         //await _crmDataProcessingService.Run(lists.Keys.First());
         _logger.LogInformation("Main service work done");
@@ -60,4 +60,12 @@ public class MainService
         return uncreatedClustersIdsAndNames;
     }
 
+    public async Task FindDuplicates()
+    {
+        var lists = await _crmService.ListTheProspectingLists();
+        var crmDataProcessingService = _serviceProvider.GetRequiredService<CrmDataProcessingService>();
+
+        await crmDataProcessingService.FindDuplicates(lists);
+        _logger.LogInformation("Find duplicates work done");
+    }
 }

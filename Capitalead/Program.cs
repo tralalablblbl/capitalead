@@ -40,9 +40,9 @@ builder.Services.AddHttpClient(nameof(LobstrService), (services, client) =>
     .SetHandlerLifetime(TimeSpan.FromMinutes(5))  //Set lifetime to five minutes
     .AddPolicyHandler(GetRetryPolicy());
 
-builder.Services.AddHttpClient(nameof(NoCRMService), (services, client) =>
+builder.Services.AddHttpClient(nameof(NoCrmService), (services, client) =>
     {
-        client.BaseAddress = new Uri(NoCRMService.NOCRM_API_URL);
+        client.BaseAddress = new Uri(NoCrmService.NOCRM_API_URL);
         client.DefaultRequestHeaders.Add("X-API-KEY",
             services.GetRequiredService<IConfiguration>()["nocrm-auth-token"] ??
             throw new KeyNotFoundException("nocrm-auth-token"));
@@ -64,7 +64,7 @@ builder.Services.AddDbContext<AppDatabase>((provider, options) =>
 builder.Services
     .AddTransient<LobstrService>()
     .AddTransient<CrmDataProcessingService>()
-    .AddTransient<NoCRMService>()
+    .AddTransient<NoCrmService>()
     .AddTransient<MainService>()
     .AddHostedService<Scheduler>();
 
@@ -93,18 +93,22 @@ app.MapGet("/api/v1/run", async ([FromServices]MainService mainService, [FromSer
     {
         var logger = loggerFactory.CreateLogger("api/v1/run");
         logger.LogInformation("Started uploading script...");
-        await mainService.Start();
+        await mainService.StartMigration();
         logger.LogInformation("Successfully uploaded all data to new prospecting lists!");
         return Results.Ok();
     })
     .WithName("run")
     .WithOpenApi();
 
-app.MapGet("/api/v1/remove-duplicates", () =>
+app.MapGet("/api/v1/find-duplicates", async ([FromServices]MainService mainService, [FromServices]ILoggerFactory loggerFactory) =>
     {
+        var logger = loggerFactory.CreateLogger("api/v1/remove-duplicates");
+        logger.LogInformation("Started find duplicates script...");
+        await mainService.FindDuplicates();
+        logger.LogInformation("Successfully found duplicates!");
         return Results.Ok();
     })
-    .WithName("remove-duplicates")
+    .WithName("find-duplicates")
     .WithOpenApi();
 
 app.Run();
