@@ -66,7 +66,7 @@ public class NoCrmService
     public async Task<Spreadsheet> CreateNewProspectingList(string listTitle, string[] tags, JsonNode[]? prospects)
     {
         _logger.LogInformation("Creating new prospecting list {ListTitle}", listTitle);
-        var body = Helper.BuildJsonBodyForCreatingProspList(listTitle, tags, _configuration["nocrm-user-email"], prospects);
+        var body = Helper.BuildJsonBodyForCreatingProspList(listTitle, tags, _configuration["nocrm_user_email"], prospects);
         return await CreateProspectingList(body);
     }
 

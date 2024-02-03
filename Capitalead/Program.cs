@@ -7,9 +7,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Polly;
 using Polly.Extensions.Http;
-using Polly.Retry;
 using Serilog;
-using ILogger = Microsoft.Extensions.Logging.ILogger;
 
 Log.Logger = new LoggerConfiguration()
     .WriteTo.Console()
@@ -33,8 +31,8 @@ builder.Services.AddHttpClient(nameof(LobstrService), (services, client) =>
     {
         client.BaseAddress = new Uri(LobstrService.LOBSTR_BASE_URL);
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Token",
-            services.GetRequiredService<IConfiguration>()["lobstr-auth-token"] ??
-            throw new KeyNotFoundException("lobstr-auth-token"));
+            services.GetRequiredService<IConfiguration>()["lobstr_auth_token"] ??
+            throw new KeyNotFoundException("lobstr_auth_token"));
         client.DefaultRequestHeaders.Connection.Add("keep-alive");
     })
     .SetHandlerLifetime(TimeSpan.FromMinutes(5))  //Set lifetime to five minutes
@@ -44,8 +42,8 @@ builder.Services.AddHttpClient(nameof(NoCrmService), (services, client) =>
     {
         client.BaseAddress = new Uri(NoCrmService.NOCRM_API_URL);
         client.DefaultRequestHeaders.Add("X-API-KEY",
-            services.GetRequiredService<IConfiguration>()["nocrm-auth-token"] ??
-            throw new KeyNotFoundException("nocrm-auth-token"));
+            services.GetRequiredService<IConfiguration>()["nocrm_auth_token"] ??
+            throw new KeyNotFoundException("nocrm_auth_token"));
     })
     .SetHandlerLifetime(TimeSpan.FromMinutes(5))  //Set lifetime to five minutes
     .AddPolicyHandler(GetRetryPolicy());

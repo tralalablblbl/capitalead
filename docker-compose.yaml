@@ -1,0 +1,15 @@
+version: '3.3'
+services:
+  capitalead-parser-dotnet:
+    build:
+      context: .
+      dockerfile: Capitalead/Dockerfile
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Release
+      - ConnectionString__Default=${ConnectionString__Default}
+      - lobstr_auth_token=${lobstr_auth_token}
+      - nocrm_auth_token=${nocrm_auth_token}
+      - run_migration_cron=${run_migration_cron}
+      - nocrm_user_email=${nocrm_user_email}
+    ports:
+      - "8055:8080"

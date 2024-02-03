@@ -18,7 +18,8 @@ public class Scheduler : IHostedService
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
-        var cron = _configuration["run-migration-cron"];
+        var cron = _configuration["run_migration_cron"];
+        _logger.LogInformation("Run migration cron: {Cron}", cron);
         if (!string.IsNullOrEmpty(cron) && cron.ToLower() != "none")
         {
             _recurringJobManager.AddOrUpdate<MainService>("easyjob", mainService => mainService.StartMigration(), cron);
