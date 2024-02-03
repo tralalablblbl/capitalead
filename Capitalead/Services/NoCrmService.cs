@@ -13,6 +13,7 @@ public class NoCrmService
 
     private const int MAX_ROW_NUMBER_PER_REQUEST = 100;
     private const int CLUSTER_ID_LENGTH = 32;
+    private const int CLUSTER_INDEX_TAG_POSITION = 2;
 
     public const string NOCRM_API_URL = "https://capitalead26.nocrm.io/";
     private const string SPREADSHEETS_URL = "api/v2/spreadsheets";
@@ -26,40 +27,65 @@ public class NoCrmService
         _configuration = configuration;
     }
 
-    public async Task UploadDataToCRM(JsonNode[] apartments, string listId)
+    public async Task UploadDataToCRM(JsonNode[] prospects, string clusterId, Spreadsheet[] sheets)
     {
-        _logger.LogInformation("Find unloaded data for list {ListId}, rows count {Count}", listId, apartments.Length);
-        foreach (var chunk in apartments.Chunk(MAX_ROW_NUMBER_PER_REQUEST))
+        _logger.LogInformation("Find unloaded data from cluster {ClusterId}, rows count {Count}", clusterId, prospects.Length);
+        var unloadedProspects = prospects.ToList();
+        // Load data to existing sheets
+        foreach (var sheet in sheets)
         {
-            JsonNode jsonObject = new JsonObject();
-            jsonObject["content"] = new JsonArray(chunk);
-            await UploadData(jsonObject, listId);
+            if (unloadedProspects.Count <= 0)
+                break;
+            if (sheet.TotalRowCount >= 4999)
+                continue;
+            var canUpload = 4999 - sheet.TotalRowCount;
+            var toUpload = unloadedProspects.Take((int)Math.Min(canUpload, unloadedProspects.Count)).ToArray();
+            await UploadToSheet(toUpload, sheet.Id);
+            unloadedProspects = unloadedProspects.Skip(toUpload.Length).ToList();
+        }
+
+        var lastSheet = GetLastSheet();
+        // Load data to new sheets
+        while (unloadedProspects.Any())
+        {
+            var index = lastSheet.Tags.Length == 2 ? 0 : int.Parse(lastSheet.Tags[CLUSTER_INDEX_TAG_POSITION]);
+            index++;
+            var canUpload = 4999;
+            var toUpload = unloadedProspects.Take((int)Math.Min(canUpload, unloadedProspects.Count)).ToArray();
+            var sheet = await CreateNewProspectingList(lastSheet.Title + " " + index.ToString("000"), new string[] { clusterId, lastSheet.Title, index.ToString() }, toUpload);
+            unloadedProspects = unloadedProspects.Skip(toUpload.Length).ToList();
+            lastSheet = sheet;
+        }
+
+        Spreadsheet GetLastSheet()
+        {
+            return sheets.OrderByDescending(s => s.Tags.Length == 2 ? 0 : int.Parse(s.Tags[CLUSTER_INDEX_TAG_POSITION])).First();
         }
     }
 
-    public async Task<bool> CreateNewProspectingList(string listTitle, string[] tags)
+    public async Task<Spreadsheet> CreateNewProspectingList(string listTitle, string[] tags, JsonNode[]? prospects)
     {
         _logger.LogInformation("Creating new prospecting list {ListTitle}", listTitle);
-        var body = Helper.BuildJsonBodyForCreatingProspList(listTitle, tags, _configuration["nocrm-user-email"]);
+        var body = Helper.BuildJsonBodyForCreatingProspList(listTitle, tags, _configuration["nocrm-user-email"], prospects);
         return await CreateProspectingList(body);
     }
 
-    public async Task<IDictionary<string, string>> ListTheProspectingLists()
+    public async Task<IDictionary<long, (Spreadsheet sheet, string clusterId)>> ListTheProspectingLists()
     {
         var client = GetClient();
         var response = await client.GetAsync($"{SPREADSHEETS_URL}?limit=1000");
-        response.EnsureSuccessStatusCode();
+
         if (response.IsSuccessStatusCode)
         {
             _logger.LogInformation("Successfully listed all prospecting lists!");
             var sheets = await response.Content.ReadFromJsonAsync<Spreadsheet[]>() ?? throw new ArgumentNullException();
-            var listsNames = new Dictionary<string, string>();
+            var listsNames = new Dictionary<long, (Spreadsheet sheet, string clusterId)>();
             foreach (var sheet in sheets)
             {
                 var clusterIdTag = sheet.Tags.FirstOrDefault();
                 if (clusterIdTag?.Length == CLUSTER_ID_LENGTH && !clusterIdTag.Contains(" "))
                 {
-                    listsNames.Add(sheet.Id.ToString(), clusterIdTag);
+                    listsNames.Add(sheet.Id, (sheet, clusterIdTag));
                 }
             }
 
@@ -71,7 +97,7 @@ public class NoCrmService
             $"Error occurred while listing all prospecting lists!, status: {response.StatusCode}, error: {await response.Content.ReadAsStringAsync()}");
     }
 
-    public async Task<Spreadsheet> RetrieveTheProspectingList(string listId)
+    public async Task<Spreadsheet> RetrieveTheProspectingList(long listId)
     {
         var client = GetClient();
         var response = await client.GetAsync($"{SPREADSHEETS_URL}/{listId}");
@@ -121,7 +147,21 @@ public class NoCrmService
         }
     }
 
-    private async Task UploadData(JsonNode body, string listId)
+    private async Task UploadToSheet(JsonNode[] prospects, long sheetId)
+    {
+        //return;
+        if (!prospects.Any())
+            return;
+
+        foreach (var chunk in prospects.Chunk(MAX_ROW_NUMBER_PER_REQUEST))
+        {
+            JsonNode jsonObject = new JsonObject();
+            jsonObject["content"] = new JsonArray(chunk);
+            await UploadData(jsonObject, sheetId);
+        }
+    }
+
+    private async Task UploadData(JsonNode body, long listId)
     {
         var client = GetClient();
 
@@ -148,36 +188,38 @@ public class NoCrmService
         }
     }
 
-    private async Task<bool> CreateProspectingList(JsonObject body)
+    private async Task<Spreadsheet> CreateProspectingList(JsonObject body)
     {
+        // return new Spreadsheet(1999999, body["tags"].AsArray().Select(t => t.ToString()).ToArray(),
+        //     body["title"]!.ToString(), null,
+        //     new[] { "Neighborhood", "Parsing Date", "Type", "Téléphone", "Rooms", "Size", "Energy" }, 0);
         var client = GetClient();
 
-        try
+        var response = await client.PostAsJsonAsync(SPREADSHEETS_URL, body);
+        if (response.IsSuccessStatusCode)
         {
-            var response = await client.PostAsJsonAsync(SPREADSHEETS_URL, body);
-            response.EnsureSuccessStatusCode();
-            if (response.IsSuccessStatusCode)
-            {
-                _logger.LogInformation("Successfully created new prospecting list!");
-                return true;
-            }
-            else
-            {
-                _logger.LogError("Error occurred while creating prospecting list {List}! Body: {Body}, Error: {Error}",
-                    PROSPECTING_LIST_TITLE, body.ToJsonString(), await response.Content.ReadAsStringAsync());
-            }
+            _logger.LogInformation("Successfully created new prospecting list!");
+            return await response.Content.ReadFromJsonAsync<Spreadsheet>() ?? throw new ArgumentNullException();
         }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error occurred while creating prospecting list {List}! Body: {Body}",
-                PROSPECTING_LIST_TITLE, body.ToJsonString());
-        }
-
-        return false;
+        _logger.LogError("Error occurred while creating prospecting list {List}! Body: {Body}, Error: {Error}",
+            PROSPECTING_LIST_TITLE, body.ToJsonString(), await response.Content.ReadAsStringAsync());
+        response.EnsureSuccessStatusCode();
+        throw new NotSupportedException();
     }
 
     private HttpClient GetClient() => _httpClientFactory.CreateClient(nameof(NoCrmService));
 }
 
-public record Spreadsheet(long Id, string[] Tags, string Title, [property: JsonPropertyName("spreadsheet_rows")] NoCrmProspect[]? SpreadsheetRows, [property: JsonPropertyName("column_names")] string[] ColumnNames);
-public record NoCrmProspect(long Id, [property: JsonPropertyName("is_active")]bool IsActive, [property: JsonPropertyName("is_archived")]bool IsArchived, JsonNode[] Content, [property: JsonPropertyName("spreadsheet_id")] long? SpreadsheetId);
+public record Spreadsheet(
+    long Id,
+    string[] Tags,
+    string Title,
+    [property: JsonPropertyName("spreadsheet_rows")] NoCrmProspect[]? SpreadsheetRows,
+    [property: JsonPropertyName("column_names")] string[] ColumnNames,
+    [property: JsonPropertyName("total_row_count")] long TotalRowCount);
+public record NoCrmProspect(
+    long Id,
+    [property: JsonPropertyName("is_active")]bool IsActive,
+    [property: JsonPropertyName("is_archived")]bool IsArchived,
+    JsonNode[] Content,
+    [property: JsonPropertyName("spreadsheet_id")] long? SpreadsheetId);

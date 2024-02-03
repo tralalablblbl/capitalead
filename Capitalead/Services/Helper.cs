@@ -31,12 +31,17 @@ public static class Helper
         return transformed.ToArray();
     }
 
-    public static JsonObject BuildJsonBodyForCreatingProspList(string listTitle, string[] tags, string nocrmUserEmail) {
+    public static JsonObject BuildJsonBodyForCreatingProspList(string listTitle, string[] tags, string nocrmUserEmail, JsonNode[]? prospects) {
         JsonObject jsonObject = new JsonObject();
         jsonObject["title"] = listTitle;
 
         JsonArray jsonArray = new JsonArray();
         jsonArray.Add(new JsonArray("Neighborhood", "Parsing Date", "Type", "Téléphone", "Rooms", "Size", "Energy"));
+        if (prospects != null)
+            foreach (var prospect in prospects) 
+            {
+                jsonArray.Add(prospect.AsArray());
+            }
 
         jsonObject["content"] = jsonArray;
         jsonObject["description"] = listTitle;

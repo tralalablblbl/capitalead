@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Globalization;
 using System.Text.Json.Nodes;
 using Capitalead.Data;
@@ -27,42 +26,34 @@ public class CrmDataProcessingService
         _serviceProvider = serviceProvider;
     }
 
-    public async Task RunMigration(string listId)
+    public async Task RunMigration(string clusterId, Spreadsheet[] sheets)
     {
-        _logger.LogDebug("Thread with listID {ListId} starting", listId);
+        _logger.LogDebug("Thread with clusterId {ClusterId} starting", clusterId);
 
-        var unloadedApartments = await FindUnloadedClusterDataForList(listId);
+        var unloadedApartments = await FindUnloadedClusterDataForList(clusterId);
 
         if (unloadedApartments.Any())
         {
-            await _crmService.UploadDataToCRM(unloadedApartments, listId);
-            await SaveApartmentsToDatabase(unloadedApartments, listId);
-            _logger.LogInformation("List {ListId} saved", listId);
+            await _crmService.UploadDataToCRM(unloadedApartments, clusterId, sheets);
+            await SaveApartmentsToDatabase(unloadedApartments, clusterId);
+            _logger.LogInformation("Cluster {ClusterId} stored to nocrm", clusterId);
         }
         else
         {
-            _logger.LogInformation("New data for list {ListId} not found", listId);
+            _logger.LogInformation("New data from cluster {ClusterId} not found", clusterId);
         }
     }
 
-    private async Task<JsonNode[]> FindUnloadedClusterDataForList(string crmListId)
+    private async Task<JsonNode[]> FindUnloadedClusterDataForList(string clusterId)
     {
         var unloadedData = new Dictionary<string, JsonNode>();
-        var dataSet = new HashSet<string>();
-        var prospectingListData = await _crmService.RetrieveTheProspectingList(crmListId);
-        foreach (var prospect in prospectingListData.SpreadsheetRows)
-        {
-            dataSet.Add(prospect.Content[TELEPHONE_FIELD_POSITION]?.ToString() ?? string.Empty);
-        }
 
-        var listTagClusterId = prospectingListData.Tags[CLUSTER_ID_TAG_POSITION];
-
-        var runIds = await _lobstrService.GetRunsFromCluster(listTagClusterId);
+        var runIds = await _lobstrService.GetRunsFromCluster(clusterId);
         var dbRuns = await _database.ProcessedRuns.Where(r => runIds.Contains(r.RunId)).Select(r => r.RunId)
             .ToArrayAsync();
         var newRuns = runIds.Except(dbRuns).ToArray();
 
-        newRuns = newRuns.Take(3).ToArray();
+        //newRuns = newRuns.Take(3).ToArray();
 
         var newProcessedRuns = new List<ProcessedRun>();
         foreach (var runId in newRuns)
@@ -70,35 +61,43 @@ public class CrmDataProcessingService
             try
             {
                 var records = await _lobstrService.GetRecordsFromRun(runId);
-                var runData = new Dictionary<string, JsonNode>();
-                foreach (var json in records)
+                var clearDataCount = 0;
+                foreach (var chunk in records.Chunk(200))
                 {
-                    var phone = json["phone"]?.GetValue<string>();
-                    if (string.IsNullOrEmpty(phone))
+                    var runData = new Dictionary<string, JsonNode>();
+                    foreach (var json in records)
                     {
-                        continue;
+                        var phone = json["phone"]?.GetValue<string>();
+                        if (string.IsNullOrEmpty(phone))
+                        {
+                            continue;
+                        }
+ 
+                        runData.TryAdd(phone, json);
                     }
 
-                    runData.TryAdd(phone, json);
+                    var allPhones = runData.Keys;
+                    var dbPhones = await _database.Prospects
+                        .Where(u => allPhones.Contains(u.Phone))
+                        .Select(u => u.Phone)
+                        .Distinct()
+                        .ToDictionaryAsync(u => u);
+                    var clearData = runData
+                        .Where(kv => !dbPhones.ContainsKey(kv.Key))
+                        .ToList();
+                    foreach (var pair in clearData)
+                    {
+                        unloadedData.TryAdd(pair.Key, pair.Value);
+                    }
+
+                    clearDataCount += clearData.Count;
                 }
-                var allPhones = runData.Keys;
-                var dbPhones = await _database.Prospects
-                    .Where(u => allPhones.Contains(u.Phone))
-                    .Select(u => u.Phone)
-                    .Distinct()
-                    .ToDictionaryAsync(u => u);
-                var clearData = runData
-                    .Where(kv => !dbPhones.ContainsKey(kv.Key))
-                    .ToList();
-                foreach (var pair in clearData)
-                {
-                    unloadedData.TryAdd(pair.Key, pair.Value);
-                }
+
                 newProcessedRuns.Add(new ProcessedRun()
                 {
                     Id = Guid.NewGuid(),
                     ProcessedDate = DateTime.UtcNow,
-                    ProspectsCount = clearData.Count,
+                    ProspectsCount = clearDataCount,
                     RunId = runId
                 });
             }
@@ -116,9 +115,9 @@ public class CrmDataProcessingService
         return Helper.TransformJSON(unloadedData.Values.ToArray());
     }
 
-    private async Task SaveApartmentsToDatabase(JsonNode[] unloadedApartments, string listId)
+    private async Task SaveApartmentsToDatabase(JsonNode[] unloadedApartments, string clusterId)
     {
-        _logger.LogInformation("Start saving unloaded data from list {ListId} in database", listId);
+        _logger.LogInformation("Start saving unloaded data from cluster {ClusterId} in database", clusterId);
         foreach (var chunk in unloadedApartments.Chunk(200))
         {
             var prospects = new List<Prospect>();
@@ -146,7 +145,7 @@ public class CrmDataProcessingService
         }
     }
 
-    public async Task FindDuplicates(IDictionary<string, string> allList)
+    public async Task FindDuplicates(IDictionary<long, (Spreadsheet sheet, string clusterId)> allList)
     {
         var allSheets = new Dictionary<long, Spreadsheet>();
         foreach (var listId in allList.Keys)

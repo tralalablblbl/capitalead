@@ -1,5 +1,3 @@
-using System.Collections.Concurrent;
-
 namespace Capitalead.Services;
 
 public class MainService
@@ -27,26 +25,26 @@ public class MainService
             foreach (var keyvalue in uncreatedClustersIdsAndNames)
             {
                 await _crmService.CreateNewProspectingList(keyvalue.Value,
-                    new string[] { keyvalue.Key, keyvalue.Value });
+                    new string[] { keyvalue.Key, keyvalue.Value }, null);
             }
         }
 
         var lists = await _crmService.ListTheProspectingLists();
-        await Parallel.ForEachAsync(lists.Keys, CancellationToken.None,
-            async (listId, _) =>
+        var sheetsByClusters = lists.Values.GroupBy(s => s.clusterId).ToList();
+        await Parallel.ForEachAsync(sheetsByClusters, new ParallelOptions(){ MaxDegreeOfParallelism = 5 },
+            async (group, _) =>
             {
                 await using var scope = _serviceProvider.CreateAsyncScope();
                 var crmDataProcessingService = scope.ServiceProvider.GetRequiredService<CrmDataProcessingService>();
-                await crmDataProcessingService.RunMigration(listId);
+                await crmDataProcessingService.RunMigration(group.Key, group.Select(g => g.sheet).ToArray());
             });
-        //await _crmDataProcessingService.Run(lists.Keys.First());
         _logger.LogInformation("Main service work done");
     }
 
     private async Task<IDictionary<string, string>> GetUncreatedCRMListsForClusters()
     {
         var clusters = await _lobstrService.GetClusterIdsAndNames();
-        var listsClusterIdTags = (await _crmService.ListTheProspectingLists()).Values;
+        var listsClusterIdTags = (await _crmService.ListTheProspectingLists()).Values.Select(c => c.clusterId);
         var clustersIds = clusters.Keys;
 
         var clustersIdOfUncreatedLists = clustersIds.Except(listsClusterIdTags).ToList();
