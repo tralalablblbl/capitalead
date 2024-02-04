@@ -67,7 +67,7 @@ public class CrmDataProcessingService
                     var runData = new Dictionary<string, JsonNode>();
                     foreach (var json in records)
                     {
-                        var phone = json["phone"]?.GetValue<string>();
+                        var phone = Helper.GetPhone(json["phone"]?.GetValue<string>());
                         if (string.IsNullOrEmpty(phone))
                         {
                             continue;
