@@ -108,8 +108,12 @@ public class CrmDataProcessingService
             }
         }
 
-        await _database.ProcessedRuns.AddRangeAsync(newProcessedRuns);
-        await _database.SaveChangesAsync();
+        if (newProcessedRuns.Any())
+        {
+            newProcessedRuns = newProcessedRuns.DistinctBy(r => r.RunId).ToList();
+            await _database.ProcessedRuns.AddRangeAsync(newProcessedRuns);
+            await _database.SaveChangesAsync();
+        }
 
         _logger.LogInformation("return data");
         return Helper.TransformJSON(unloadedData.Values.ToArray());
