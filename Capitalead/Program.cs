@@ -87,26 +87,28 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.MapGet("/api/v1/run", async ([FromServices]MainService mainService, [FromServices]ILoggerFactory loggerFactory) =>
+app.MapGet("/api/v1/run", ([FromServices]IBackgroundJobClient backgroundJobClient) =>
     {
-        var logger = loggerFactory.CreateLogger("api/v1/run");
-        logger.LogInformation("Started uploading script...");
-        await mainService.StartMigration();
-        logger.LogInformation("Successfully uploaded all data to new prospecting lists!");
+        backgroundJobClient.Enqueue<MainService>(mainService => mainService.StartMigration());
         return Results.Ok();
     })
     .WithName("run")
     .WithOpenApi();
 
-app.MapGet("/api/v1/find-duplicates", async ([FromServices]MainService mainService, [FromServices]ILoggerFactory loggerFactory) =>
+app.MapGet("/api/v1/find-duplicates", ([FromServices]IBackgroundJobClient backgroundJobClient) =>
     {
-        var logger = loggerFactory.CreateLogger("api/v1/remove-duplicates");
-        logger.LogInformation("Started find duplicates script...");
-        await mainService.FindDuplicates();
-        logger.LogInformation("Successfully found duplicates!");
+        backgroundJobClient.Enqueue<MainService>(mainService => mainService.FindDuplicates());
         return Results.Ok();
     })
     .WithName("find-duplicates")
+    .WithOpenApi();
+
+app.MapGet("/api/v1/migrate-sheets", ([FromServices]IBackgroundJobClient backgroundJobClient) =>
+    {
+        backgroundJobClient.Enqueue<MainService>(mainService => mainService.MigrateSheets());
+        return Results.Ok();
+    })
+    .WithName("migrate-sheets")
     .WithOpenApi();
 
 app.Run();

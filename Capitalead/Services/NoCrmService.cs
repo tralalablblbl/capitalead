@@ -51,8 +51,9 @@ public class NoCrmService
             var index = lastSheet.Tags.Length == 2 ? 0 : int.Parse(lastSheet.Tags[CLUSTER_INDEX_TAG_POSITION]);
             index++;
             var canUpload = 4999;
+            var title = lastSheet.Tags[1];
             var toUpload = unloadedProspects.Take((int)Math.Min(canUpload, unloadedProspects.Count)).ToArray();
-            var sheet = await CreateNewProspectingList(lastSheet.Title + " " + index.ToString("000"), new string[] { clusterId, lastSheet.Title, index.ToString() }, toUpload);
+            var sheet = await CreateNewProspectingList($"V3 - {title} {index:000}", new string[] { clusterId, title, index.ToString() }, toUpload);
             unloadedProspects = unloadedProspects.Skip(toUpload.Length).ToList();
             lastSheet = sheet;
         }
@@ -83,7 +84,8 @@ public class NoCrmService
             foreach (var sheet in sheets)
             {
                 var clusterIdTag = sheet.Tags.FirstOrDefault();
-                if (clusterIdTag?.Length == CLUSTER_ID_LENGTH && !clusterIdTag.Contains(" "))
+                // new sheets has index tag
+                if (sheet.Tags.Length == 3 && clusterIdTag?.Length == CLUSTER_ID_LENGTH && !clusterIdTag.Contains(" "))
                 {
                     listsNames.Add(sheet.Id, (sheet, clusterIdTag));
                 }
@@ -95,6 +97,34 @@ public class NoCrmService
         _logger.LogError("Error occurred while listing all prospecting lists!");
         throw new ApplicationException(
             $"Error occurred while listing all prospecting lists!, status: {response.StatusCode}, error: {await response.Content.ReadAsStringAsync()}");
+    }
+
+    public async Task<IDictionary<long, (Spreadsheet sheet, string clusterId)>> ListTheProspectingListsToMigrate()
+    {
+        var client = GetClient();
+        var response = await client.GetAsync($"{SPREADSHEETS_URL}?limit=1000");
+
+        if (response.IsSuccessStatusCode)
+        {
+            _logger.LogInformation("Successfully listed all prospecting lists ToMigrate!");
+            var sheets = await response.Content.ReadFromJsonAsync<Spreadsheet[]>() ?? throw new ArgumentNullException();
+            var listsNames = new Dictionary<long, (Spreadsheet sheet, string clusterId)>();
+            foreach (var sheet in sheets)
+            {
+                var clusterIdTag = sheet.Tags.FirstOrDefault();
+                // Old sheet without index tag
+                if (sheet.Tags.Length == 2 && clusterIdTag?.Length == CLUSTER_ID_LENGTH && !clusterIdTag.Contains(" "))
+                {
+                    listsNames.Add(sheet.Id, (sheet, clusterIdTag));
+                }
+            }
+
+            return listsNames;
+        }
+
+        _logger.LogError("Error occurred while listing all prospecting lists ToMigrate!");
+        throw new ApplicationException(
+            $"Error occurred while listing all prospecting lists ToMigrate!, status: {response.StatusCode}, error: {await response.Content.ReadAsStringAsync()}");
     }
 
     public async Task<Spreadsheet> RetrieveTheProspectingList(long listId)

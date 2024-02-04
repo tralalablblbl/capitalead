@@ -17,6 +17,7 @@ public class MainService
 
     public async Task StartMigration()
     {
+        _logger.LogInformation("Started uploading script...");
         var uncreatedClustersIdsAndNames = await GetUncreatedCRMListsForClusters();
         var isUncreatedListsExists = uncreatedClustersIdsAndNames.Any();
         
@@ -24,14 +25,14 @@ public class MainService
         {
             foreach (var keyvalue in uncreatedClustersIdsAndNames)
             {
-                await _crmService.CreateNewProspectingList(keyvalue.Value,
-                    new string[] { keyvalue.Key, keyvalue.Value }, null);
+                await _crmService.CreateNewProspectingList($"V3 - {keyvalue.Value}  001",
+                    new string[] { keyvalue.Key, keyvalue.Value, "1" }, null);
             }
         }
 
         var lists = await _crmService.ListTheProspectingLists();
         var sheetsByClusters = lists.Values.GroupBy(s => s.clusterId).ToList();
-        await Parallel.ForEachAsync(sheetsByClusters, new ParallelOptions(){ MaxDegreeOfParallelism = 5 },
+        await Parallel.ForEachAsync(sheetsByClusters, new ParallelOptions(){ MaxDegreeOfParallelism = 1 },
             async (group, _) =>
             {
                 await using var scope = _serviceProvider.CreateAsyncScope();
@@ -39,6 +40,7 @@ public class MainService
                 await crmDataProcessingService.RunMigration(group.Key, group.Select(g => g.sheet).ToArray());
             });
         _logger.LogInformation("Main service work done");
+        _logger.LogInformation("Successfully uploaded all data to new prospecting lists!");
     }
 
     private async Task<IDictionary<string, string>> GetUncreatedCRMListsForClusters()
@@ -60,10 +62,23 @@ public class MainService
 
     public async Task FindDuplicates()
     {
+        _logger.LogInformation("Started find duplicates script...");
         var lists = await _crmService.ListTheProspectingLists();
         var crmDataProcessingService = _serviceProvider.GetRequiredService<CrmDataProcessingService>();
 
         await crmDataProcessingService.FindDuplicates(lists);
         _logger.LogInformation("Find duplicates work done");
+        _logger.LogInformation("Successfully found duplicates!");
+    }
+
+    public async Task MigrateSheets()
+    {
+        _logger.LogInformation("Started spreadsheets migration...");
+        var lists = await _crmService.ListTheProspectingListsToMigrate();
+        var crmDataProcessingService = _serviceProvider.GetRequiredService<CrmDataProcessingService>();
+
+        await crmDataProcessingService.MigrateSheets(lists);
+        _logger.LogInformation("Migrate sheets work done");
+        _logger.LogInformation("Successfully migrated spreadsheets!");
     }
 }
