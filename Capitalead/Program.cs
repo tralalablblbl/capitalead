@@ -5,6 +5,7 @@ using Hangfire;
 using Hangfire.MemoryStorage;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Polly;
 using Polly.Extensions.Http;
 using Serilog;
@@ -64,7 +65,8 @@ builder.Services
     .AddTransient<CrmDataProcessingService>()
     .AddTransient<NoCrmService>()
     .AddTransient<MainService>()
-    .AddHostedService<Scheduler>();
+    .AddHostedService<Scheduler>()
+    .AddMemoryCache();
 
 builder.Services.AddHangfire(config =>
 {
@@ -93,6 +95,31 @@ app.MapGet("/api/v1/run", ([FromServices]IBackgroundJobClient backgroundJobClien
         return Results.Ok();
     })
     .WithName("run")
+    .WithOpenApi();
+
+app.MapGet("/api/v1/run-info", ([FromServices]IMemoryCache memoryCache) =>
+    {
+        memoryCache.TryGetValue<RunInfo>("runInfo", out var info);
+        if (info == null)
+            return Results.Ok("null");
+        return Results.Ok(new
+        {
+            Status = info.Status.ToString(),
+            CompletedClusters = info.CompletedClusters.ToList(),
+            Clusters = info.Sheets.Select(s => new
+            {
+                ClusterId = s.Key,
+                Sheets = s.Value.Select(sheet => new
+                {
+                    sheet.sheetId,
+                    sheet.title
+                })
+            }),
+            CompletedCount = info.CompletedClusters.Count,
+            ClustersCount = info.Sheets.Count
+        });
+    })
+    .WithName("run-info")
     .WithOpenApi();
 
 app.MapGet("/api/v1/find-duplicates", ([FromServices]IBackgroundJobClient backgroundJobClient) =>

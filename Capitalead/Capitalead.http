@@ -4,6 +4,10 @@ GET {{Capitalead_HostAddress}}/api/v1/run
 Accept: application/json
 ###
 
+GET {{Capitalead_HostAddress}}/api/v1/run-info
+Accept: application/json
+###
+
 GET {{Capitalead_HostAddress}}/api/v1/find-duplicates
 Accept: application/json
 ###

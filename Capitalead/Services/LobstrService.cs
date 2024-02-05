@@ -57,7 +57,7 @@ public class LobstrService
             do
             {
                 page++;
-                var response = await client.GetAsync($"{LOBSTR_GET_RESULT_URL}?page={page}&run={runId}&page_size=400");
+                var response = await client.GetAsync($"{LOBSTR_GET_RESULT_URL}?page={page}&run={runId}&page_size=10000");
                 response.EnsureSuccessStatusCode();
                 var runs = await response.Content.ReadFromJsonAsync<ListData<JsonNode>>() ??
                            throw new ArgumentNullException();
