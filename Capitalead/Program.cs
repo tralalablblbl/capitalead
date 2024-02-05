@@ -35,6 +35,7 @@ builder.Services.AddHttpClient(nameof(LobstrService), (services, client) =>
             services.GetRequiredService<IConfiguration>()["lobstr_auth_token"] ??
             throw new KeyNotFoundException("lobstr_auth_token"));
         client.DefaultRequestHeaders.Connection.Add("keep-alive");
+        client.Timeout = TimeSpan.FromSeconds(300);
     })
     .SetHandlerLifetime(TimeSpan.FromMinutes(5))  //Set lifetime to five minutes
     .AddPolicyHandler(GetRetryPolicy());
@@ -45,6 +46,7 @@ builder.Services.AddHttpClient(nameof(NoCrmService), (services, client) =>
         client.DefaultRequestHeaders.Add("X-API-KEY",
             services.GetRequiredService<IConfiguration>()["nocrm_auth_token"] ??
             throw new KeyNotFoundException("nocrm_auth_token"));
+        client.Timeout = TimeSpan.FromSeconds(300);
     })
     .SetHandlerLifetime(TimeSpan.FromMinutes(5))  //Set lifetime to five minutes
     .AddPolicyHandler(GetRetryPolicy());
