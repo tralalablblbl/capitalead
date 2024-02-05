@@ -75,6 +75,8 @@ public class MainService
                 logger.LogInformation("Cluster {ClusterId}, {Completed} of {Total}. Completed", group.Key, runInfo.CompletedClusters.Count, runInfo.Sheets.Count);
                 
             });
+
+        runInfo.Status = RunStatus.Completed;
         _logger.LogInformation("Main service work done");
         _logger.LogInformation("Successfully uploaded all data to new prospecting lists!");
     }

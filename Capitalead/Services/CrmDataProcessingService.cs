@@ -110,7 +110,11 @@ public class CrmDataProcessingService
 
         if (newProcessedRuns.Any())
         {
-            newProcessedRuns = newProcessedRuns.DistinctBy(r => r.RunId).ToList();
+            var newRunIds = newProcessedRuns.Select(r => r.RunId).Distinct().ToList();
+            dbRuns = await _database.ProcessedRuns.Where(r => newRunIds.Contains(r.RunId)).Select(r => r.RunId)
+                .ToArrayAsync();
+
+            newProcessedRuns = newProcessedRuns.Where(r => !dbRuns.Contains(r.RunId)).DistinctBy(r => r.RunId).ToList();
             await _database.ProcessedRuns.AddRangeAsync(newProcessedRuns);
             await _database.SaveChangesAsync();
         }
@@ -142,7 +146,11 @@ public class CrmDataProcessingService
                 prospects.Add(apartment);
             }
 
+            var newPhones = prospects.Select(r => r.Phone).Distinct().ToList();
+            var dbPhones = await _database.Prospects.Where(prospect => newPhones.Contains(prospect.Phone)).Select(prospect => prospect.Phone)
+                .ToArrayAsync();
 
+            prospects = prospects.Where(prospect => !dbPhones.Contains(prospect.Phone)).DistinctBy(prospect => prospect.Phone).ToList();
             await _database.Prospects.AddRangeAsync(prospects);
             await _database.SaveChangesAsync();
             _logger.LogInformation("Successfully uploaded slice of data in database");
