@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using System.Text.Json.Serialization;
 
 namespace Capitalead.Services;
 
@@ -53,17 +54,19 @@ public class LobstrService
         {
             var result = new List<JsonNode>();
             var page = 0;
+            long totalPages;
             var hasMoreData = false;
             do
             {
                 page++;
-                var response = await client.GetAsync($"{LOBSTR_GET_RESULT_URL}?page={page}&run={runId}&page_size=10000");
+                var response = await client.GetAsync($"{LOBSTR_GET_RESULT_URL}?page={page}&run={runId}&page_size=1000000");
                 response.EnsureSuccessStatusCode();
                 var runs = await response.Content.ReadFromJsonAsync<ListData<JsonNode>>() ??
                            throw new ArgumentNullException();
+                totalPages = runs.TotalPages ?? 0;
                 result.AddRange(runs.Data);
                 hasMoreData = result.Count < runs.Count;
-            } while (hasMoreData);
+            } while (page < totalPages);
 
             return result.ToArray();
         }
@@ -129,4 +132,4 @@ public class LobstrService
 
 public record Run(string Id);
 public record Cluster(string Id, string Name);
-public record ListData<T>(long Count, long Page, long Limit, T[] Data);
+public record ListData<T>(long Count, long Page, long Limit, T[] Data,[property: JsonPropertyName("total_pages")] long? TotalPages);
