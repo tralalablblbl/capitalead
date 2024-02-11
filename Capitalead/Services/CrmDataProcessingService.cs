@@ -153,9 +153,50 @@ public class CrmDataProcessingService
             var newPhones = prospects.Select(r => r.Phone).Distinct().ToList();
             var dbPhones = await _database.Prospects.Where(prospect => newPhones.Contains(prospect.Phone))
                 .Select(prospect => prospect.Phone)
-                .ToArrayAsync();
+                .ToDictionaryAsync(p => p);
 
-            prospects = prospects.Where(prospect => !dbPhones.Contains(prospect.Phone))
+            prospects = prospects.Where(prospect => !dbPhones.ContainsKey(prospect.Phone))
+                .DistinctBy(prospect => prospect.Phone).ToList();
+            await _database.Prospects.AddRangeAsync(prospects);
+            await _database.SaveChangesAsync();
+            _logger.LogInformation("Successfully uploaded slice of data in database");
+        }
+    }
+
+    private async Task SaveApartmentsToDatabaseMigrate((long sheetId, JsonNode[] prospects)[] uploadedData, string clusterId, Guid importId)
+    {
+        _logger.LogInformation("Start saving unloaded data from cluster {ClusterId} in database", clusterId);
+        foreach (var chunk in uploadedData.SelectMany(row => row.prospects.Select(p => (row.sheetId, p))).Chunk(200))
+        {
+            var prospects = new List<Prospect>();
+
+            foreach (var (sheetId, node) in chunk)
+            {
+                var apart = node.AsArray();
+                var parsingDate = DateTime.TryParseExact(apart[1].ToString(), "dd/MM/yyyy",
+                    CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var date)
+                    ? date.ToUniversalTime()
+                    : DateTime.UtcNow;
+                var apartment = new Prospect();
+                apartment.Id = Guid.NewGuid();
+                apartment.SpreadsheetId = sheetId;
+                apartment.ImportId = importId;
+                apartment.Neighbourhood = apart[0].GetValue<string>();
+                apartment.ParsingDate = parsingDate;
+                apartment.RealEstateType = apart[2].GetValue<string>();
+                apartment.Phone = apart[3].GetValue<string>();
+                apartment.Rooms = apart[4].ToString();
+                apartment.Size = apart[5].ToString();
+                apartment.Energy = apart[6].GetValue<string>();
+                prospects.Add(apartment);
+            }
+
+            var newPhones = prospects.Select(r => r.Phone).Distinct().ToList();
+            var dbPhones = await _database.Prospects.Where(prospect => newPhones.Contains(prospect.Phone))
+                .Select(prospect => prospect.Phone)
+                .ToDictionaryAsync(p => p);
+
+            prospects = prospects.Where(prospect => !dbPhones.ContainsKey(prospect.Phone))
                 .DistinctBy(prospect => prospect.Phone).ToList();
             await _database.Prospects.AddRangeAsync(prospects);
             await _database.SaveChangesAsync();
@@ -254,53 +295,103 @@ public class CrmDataProcessingService
         });
     }
 
-    public async Task MigrateSheets(IDictionary<long, (NoCrmSpreadsheet sheet, string clusterId)> allList)
+    public async Task MigrateSheets(IDictionary<long, (NoCrmSpreadsheet sheet, string clusterId)> toMigrate)
     {
-        foreach (var listId in allList.Keys)
+        var oldSheetsData = new Dictionary<string, (string phone, string cluster, NoCrmProspect prospect)>();
+        foreach (var (sheet, clusterId) in toMigrate.Values)
         {
-            using var scope = _serviceProvider.CreateScope();
-            await using var database = scope.ServiceProvider.GetRequiredService<AppDatabase>();
-            var oldSheet = await _crmService.RetrieveTheProspectingList(listId);
-            var clusterId = oldSheet.Tags.First();
-            var prospects = oldSheet.SpreadsheetRows ?? Array.Empty<NoCrmProspect>();
-            var newSheet = await _crmService.CreateNewProspectingList($"V3 - {oldSheet.Title} 001", new string[] {clusterId , oldSheet.Title, "1" }, null);
-            if (!prospects.Any())
-            {
-                _logger.LogInformation("Shpeadsheet {Title} with id {ListId} was migrated to {NewTitle}", oldSheet.Title, oldSheet.Id, newSheet.Title);
+            var oldSheet = await _crmService.RetrieveTheProspectingList(sheet.Id);
+            if (oldSheet.SpreadsheetRows == null)
                 continue;
-            }
-            var duplicatesId = new HashSet<long>();
-            var prospectIds = prospects.Select(p => p.Id).ToList();
-            foreach (var chunk in prospectIds.Chunk(200))
+            foreach (var prospect in oldSheet.SpreadsheetRows)
             {
-                var dbDuplicates = await database.DuplicateProspects
-                    .Where(u => chunk.Contains(u.ProspectId))
-                    .Select(u => u.ProspectId)
-                    .Distinct()
-                    .ToDictionaryAsync(u => u);
-
-                foreach (var prospectId in dbDuplicates.Keys)
-                {
-                    duplicatesId.Add(prospectId);
-                }
+                if (prospect.Content.Length < 4)
+                    continue;
+                var phone = prospect.Content[TELEPHONE_FIELD_POSITION]?.ToString();
+                if (string.IsNullOrEmpty(phone))
+                    continue;
+                oldSheetsData.TryAdd(phone, (phone, clusterId, prospect));
             }
-
-            var clearProspects = prospects.Where(p => !duplicatesId.Contains(p.Id)).ToList();
-            if (clearProspects.Any())
-            {
-                var array = clearProspects.Select(p => (JsonNode)new JsonArray(p.Content)).ToArray();
-                await _crmService.UploadDataToCRM(array, clusterId, [newSheet]); 
-            }
-
-            foreach (var ids in duplicatesId.Chunk(200))
-            {
-                await database.DuplicateProspects
-                    .Where(p => ids.Contains(p.ProspectId))
-                    .ExecuteUpdateAsync(setters => setters.SetProperty(b => b.Deleted, true));
-                await database.SaveChangesAsync();
-            }
-            _logger.LogInformation("Spreadsheet {Title} with id {ListId} was migrated to new lists without duplicates. Migrated count: {MigratedCount}, deleted duplicates: {DuplicatesCount}", oldSheet.Title, oldSheet.Id, clearProspects.Count, duplicatesId.Count);
         }
+        var newSheets = await _crmService.ListTheProspectingLists();
+        var newSheetsData = new Dictionary<string, NoCrmProspect>();
+        foreach (var (sheet, clusterId) in newSheets.Values)
+        {
+            var newSheet = await _crmService.RetrieveTheProspectingList(sheet.Id);
+            if (newSheet.SpreadsheetRows == null)
+                continue;
+            foreach (var prospect in newSheet.SpreadsheetRows)
+            {
+                if (prospect.Content.Length < 4)
+                    continue;
+                var phone = prospect.Content[TELEPHONE_FIELD_POSITION]?.ToString();
+                if (string.IsNullOrEmpty(phone))
+                    continue;
+                newSheetsData.TryAdd(phone, prospect with { SpreadsheetId = sheet.Id});
+            }
+        }
+
+        var toUpload = oldSheetsData.Values.Where(tuple => !newSheetsData.ContainsKey(tuple.phone)).ToList();
+        _logger.LogInformation("Found {Count} prospect to create", toUpload.Count);
+        var importId = Guid.Parse("c2d29867-3d0b-d497-9191-18a9d8ee7830");
+        foreach (var group in toUpload.GroupBy(t => t.cluster))
+        {
+            var clusterId = group.Key;
+            var sheets = newSheets.Values.Where(s => s.clusterId == clusterId).Select(s => s.sheet).ToArray();
+
+            var unloadedApartments = group
+                .Select(p => 
+                    (JsonNode)new JsonArray(p.prospect.Content.Select(j => (JsonNode)(j?.ToString() ?? string.Empty)).ToArray()))
+                .ToArray();
+            var uploadedData = await _crmService.UploadDataToCRM(unloadedApartments, clusterId, sheets);
+            //await SaveApartmentsToDatabaseMigrate(uploadedData, group.Key, importId);
+            _logger.LogInformation("Cluster {ClusterId} stored to nocrm", clusterId);
+        }
+        // foreach (var listId in allList.Keys)
+        // {
+        //     using var scope = _serviceProvider.CreateScope();
+        //     await using var database = scope.ServiceProvider.GetRequiredService<AppDatabase>();
+        //     var oldSheet = await _crmService.RetrieveTheProspectingList(listId);
+        //     var clusterId = oldSheet.Tags.First();
+        //     var prospects = oldSheet.SpreadsheetRows ?? Array.Empty<NoCrmProspect>();
+        //     var newSheet = await _crmService.CreateNewProspectingList($"V3 - {oldSheet.Title} 001", new string[] {clusterId , oldSheet.Title, "1" }, null);
+        //     if (!prospects.Any())
+        //     {
+        //         _logger.LogInformation("Shpeadsheet {Title} with id {ListId} was migrated to {NewTitle}", oldSheet.Title, oldSheet.Id, newSheet.Title);
+        //         continue;
+        //     }
+        //     var duplicatesId = new HashSet<long>();
+        //     var prospectIds = prospects.Select(p => p.Id).ToList();
+        //     foreach (var chunk in prospectIds.Chunk(200))
+        //     {
+        //         var dbDuplicates = await database.DuplicateProspects
+        //             .Where(u => chunk.Contains(u.ProspectId))
+        //             .Select(u => u.ProspectId)
+        //             .Distinct()
+        //             .ToDictionaryAsync(u => u);
+        //
+        //         foreach (var prospectId in dbDuplicates.Keys)
+        //         {
+        //             duplicatesId.Add(prospectId);
+        //         }
+        //     }
+        //
+        //     var clearProspects = prospects.Where(p => !duplicatesId.Contains(p.Id)).ToList();
+        //     if (clearProspects.Any())
+        //     {
+        //         var array = clearProspects.Select(p => (JsonNode)new JsonArray(p.Content)).ToArray();
+        //         await _crmService.UploadDataToCRM(array, clusterId, [newSheet]); 
+        //     }
+        //
+        //     foreach (var ids in duplicatesId.Chunk(200))
+        //     {
+        //         await database.DuplicateProspects
+        //             .Where(p => ids.Contains(p.ProspectId))
+        //             .ExecuteUpdateAsync(setters => setters.SetProperty(b => b.Deleted, true));
+        //         await database.SaveChangesAsync();
+        //     }
+        //     _logger.LogInformation("Spreadsheet {Title} with id {ListId} was migrated to new lists without duplicates. Migrated count: {MigratedCount}, deleted duplicates: {DuplicatesCount}", oldSheet.Title, oldSheet.Id, clearProspects.Count, duplicatesId.Count);
+        // }
     }
 
     public async Task ImportSheets(IDictionary<long, (NoCrmSpreadsheet sheet, string clusterId)> allList)

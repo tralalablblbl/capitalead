@@ -60,7 +60,7 @@ builder.Services.AddDbContext<AppDatabase>((_, options) =>
             sqlOptions.CommandTimeout(300);
             sqlOptions.EnableRetryOnFailure(maxRetryCount: 10);
         })
-        .UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);;
+        .UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);
 });
 
 builder.Services

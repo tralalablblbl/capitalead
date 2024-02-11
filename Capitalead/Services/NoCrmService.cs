@@ -185,7 +185,6 @@ public class NoCrmService
 
     private async Task UploadToSheet(JsonNode[] prospects, long sheetId)
     {
-        //return;
         if (!prospects.Any())
             return;
 
@@ -226,9 +225,6 @@ public class NoCrmService
 
     private async Task<NoCrmSpreadsheet> CreateProspectingList(JsonObject body)
     {
-        // return new Spreadsheet(1999999, body["tags"].AsArray().Select(t => t.ToString()).ToArray(),
-        //     body["title"]!.ToString(), null,
-        //     new[] { "Neighborhood", "Parsing Date", "Type", "Téléphone", "Rooms", "Size", "Energy" }, 0);
         var client = GetClient();
 
         var response = await client.PostAsJsonAsync(SPREADSHEETS_URL, body);
