@@ -52,14 +52,15 @@ builder.Services.AddHttpClient(nameof(NoCrmService), (services, client) =>
     .AddPolicyHandler(GetRetryPolicy());
 
 var connectionString = Environment.GetEnvironmentVariable("ConnectionString__Default");
-builder.Services.AddDbContext<AppDatabase>((provider, options) =>
+builder.Services.AddDbContext<AppDatabase>((_, options) =>
 {
     options.UseNpgsql(connectionString ?? throw new KeyNotFoundException("ConnectionString__Default can not be empty."),
         sqlOptions =>
         {
             sqlOptions.CommandTimeout(300);
             sqlOptions.EnableRetryOnFailure(maxRetryCount: 10);
-        });
+        })
+        .UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);;
 });
 
 builder.Services
@@ -108,17 +109,8 @@ app.MapGet("/api/v1/run-info", ([FromServices]IMemoryCache memoryCache) =>
         {
             Status = info.Status.ToString(),
             CompletedClusters = info.CompletedClusters.ToList(),
-            Clusters = info.Sheets.Select(s => new
-            {
-                ClusterId = s.Key,
-                Sheets = s.Value.Select(sheet => new
-                {
-                    sheet.sheetId,
-                    sheet.title
-                })
-            }),
             CompletedCount = info.CompletedClusters.Count,
-            ClustersCount = info.Sheets.Count
+            ClustersCount = info.ClustersCount
         });
     })
     .WithName("run-info")
@@ -138,6 +130,14 @@ app.MapGet("/api/v1/migrate-sheets", ([FromServices]IBackgroundJobClient backgro
         return Results.Ok();
     })
     .WithName("migrate-sheets")
+    .WithOpenApi();
+
+app.MapGet("/api/v1/import-sheets", ([FromServices]IBackgroundJobClient backgroundJobClient) =>
+    {
+        backgroundJobClient.Enqueue<MainService>(mainService => mainService.ImportSheetsToDatabase());
+        return Results.Ok();
+    })
+    .WithName("import-sheets")
     .WithOpenApi();
 
 app.Run();

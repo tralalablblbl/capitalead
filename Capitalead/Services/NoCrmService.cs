@@ -27,10 +27,11 @@ public class NoCrmService
         _configuration = configuration;
     }
 
-    public async Task UploadDataToCRM(JsonNode[] prospects, string clusterId, Spreadsheet[] sheets)
+    public async Task<(long sheetId, JsonNode[] prospects)[]> UploadDataToCRM(JsonNode[] prospects, string clusterId, NoCrmSpreadsheet[] sheets)
     {
         _logger.LogInformation("Find unloaded data from cluster {ClusterId}, rows count {Count}", clusterId, prospects.Length);
         var unloadedProspects = prospects.ToList();
+        var list = new List<(long sheetId, JsonNode[] prospects)>();
         // Load data to existing sheets
         foreach (var sheet in sheets)
         {
@@ -42,6 +43,7 @@ public class NoCrmService
             var toUpload = unloadedProspects.Take((int)Math.Min(canUpload, unloadedProspects.Count)).ToArray();
             await UploadToSheet(toUpload, sheet.Id);
             unloadedProspects = unloadedProspects.Skip(toUpload.Length).ToList();
+            list.Add((sheet.Id, toUpload));
         }
 
         var lastSheet = GetLastSheet();
@@ -52,26 +54,30 @@ public class NoCrmService
             index++;
             var canUpload = 4999;
             var title = lastSheet.Tags[1];
-            var toUpload = unloadedProspects.Take((int)Math.Min(canUpload, unloadedProspects.Count)).ToArray();
-            var sheet = await CreateNewProspectingList($"V3 - {title} {index:000}", new string[] { clusterId, title, index.ToString() }, toUpload);
+            var toUpload = unloadedProspects.Take(Math.Min(canUpload, unloadedProspects.Count)).ToArray();
+            var sheet = await CreateNewProspectingList($"V3 - {title} {index:000}",
+                [clusterId, title, index.ToString()], toUpload);
             unloadedProspects = unloadedProspects.Skip(toUpload.Length).ToList();
             lastSheet = sheet;
+            list.Add((sheet.Id, toUpload));
         }
 
-        Spreadsheet GetLastSheet()
+        return list.ToArray();
+
+        NoCrmSpreadsheet GetLastSheet()
         {
             return sheets.OrderByDescending(s => s.Tags.Length == 2 ? 0 : int.Parse(s.Tags[CLUSTER_INDEX_TAG_POSITION])).First();
         }
     }
 
-    public async Task<Spreadsheet> CreateNewProspectingList(string listTitle, string[] tags, JsonNode[]? prospects)
+    public async Task<NoCrmSpreadsheet> CreateNewProspectingList(string listTitle, string[] tags, JsonNode[]? prospects)
     {
         _logger.LogInformation("Creating new prospecting list {ListTitle}", listTitle);
         var body = Helper.BuildJsonBodyForCreatingProspList(listTitle, tags, _configuration["nocrm_user_email"], prospects);
         return await CreateProspectingList(body);
     }
 
-    public async Task<IDictionary<long, (Spreadsheet sheet, string clusterId)>> ListTheProspectingLists()
+    public async Task<IDictionary<long, (NoCrmSpreadsheet sheet, string clusterId)>> ListTheProspectingLists()
     {
         var client = GetClient();
         var response = await client.GetAsync($"{SPREADSHEETS_URL}?limit=1000");
@@ -79,8 +85,8 @@ public class NoCrmService
         if (response.IsSuccessStatusCode)
         {
             _logger.LogInformation("Successfully listed all prospecting lists!");
-            var sheets = await response.Content.ReadFromJsonAsync<Spreadsheet[]>() ?? throw new ArgumentNullException();
-            var listsNames = new Dictionary<long, (Spreadsheet sheet, string clusterId)>();
+            var sheets = await response.Content.ReadFromJsonAsync<NoCrmSpreadsheet[]>() ?? throw new ArgumentNullException();
+            var listsNames = new Dictionary<long, (NoCrmSpreadsheet sheet, string clusterId)>();
             foreach (var sheet in sheets)
             {
                 var clusterIdTag = sheet.Tags.FirstOrDefault();
@@ -99,7 +105,7 @@ public class NoCrmService
             $"Error occurred while listing all prospecting lists!, status: {response.StatusCode}, error: {await response.Content.ReadAsStringAsync()}");
     }
 
-    public async Task<IDictionary<long, (Spreadsheet sheet, string clusterId)>> ListTheProspectingListsToMigrate()
+    public async Task<IDictionary<long, (NoCrmSpreadsheet sheet, string clusterId)>> ListTheProspectingListsToMigrate()
     {
         var client = GetClient();
         var response = await client.GetAsync($"{SPREADSHEETS_URL}?limit=1000");
@@ -107,8 +113,8 @@ public class NoCrmService
         if (response.IsSuccessStatusCode)
         {
             _logger.LogInformation("Successfully listed all prospecting lists ToMigrate!");
-            var sheets = await response.Content.ReadFromJsonAsync<Spreadsheet[]>() ?? throw new ArgumentNullException();
-            var listsNames = new Dictionary<long, (Spreadsheet sheet, string clusterId)>();
+            var sheets = await response.Content.ReadFromJsonAsync<NoCrmSpreadsheet[]>() ?? throw new ArgumentNullException();
+            var listsNames = new Dictionary<long, (NoCrmSpreadsheet sheet, string clusterId)>();
             foreach (var sheet in sheets)
             {
                 var clusterIdTag = sheet.Tags.FirstOrDefault();
@@ -127,14 +133,14 @@ public class NoCrmService
             $"Error occurred while listing all prospecting lists ToMigrate!, status: {response.StatusCode}, error: {await response.Content.ReadAsStringAsync()}");
     }
 
-    public async Task<Spreadsheet> RetrieveTheProspectingList(long listId)
+    public async Task<NoCrmSpreadsheet> RetrieveTheProspectingList(long listId)
     {
         var client = GetClient();
         var response = await client.GetAsync($"{SPREADSHEETS_URL}/{listId}");
         if (response.IsSuccessStatusCode)
         {
             _logger.LogInformation("Successfully retrieve prospecting list {ListId}!", listId);
-            return await response.Content.ReadFromJsonAsync<Spreadsheet>() ?? throw new ArgumentNullException();
+            return await response.Content.ReadFromJsonAsync<NoCrmSpreadsheet>() ?? throw new ArgumentNullException();
         }
         else
         {
@@ -218,7 +224,7 @@ public class NoCrmService
         }
     }
 
-    private async Task<Spreadsheet> CreateProspectingList(JsonObject body)
+    private async Task<NoCrmSpreadsheet> CreateProspectingList(JsonObject body)
     {
         // return new Spreadsheet(1999999, body["tags"].AsArray().Select(t => t.ToString()).ToArray(),
         //     body["title"]!.ToString(), null,
@@ -229,7 +235,7 @@ public class NoCrmService
         if (response.IsSuccessStatusCode)
         {
             _logger.LogInformation("Successfully created new prospecting list!");
-            return await response.Content.ReadFromJsonAsync<Spreadsheet>() ?? throw new ArgumentNullException();
+            return await response.Content.ReadFromJsonAsync<NoCrmSpreadsheet>() ?? throw new ArgumentNullException();
         }
         _logger.LogError("Error occurred while creating prospecting list {List}! Body: {Body}, Error: {Error}",
             PROSPECTING_LIST_TITLE, body.ToJsonString(), await response.Content.ReadAsStringAsync());
@@ -240,7 +246,7 @@ public class NoCrmService
     private HttpClient GetClient() => _httpClientFactory.CreateClient(nameof(NoCrmService));
 }
 
-public record Spreadsheet(
+public record NoCrmSpreadsheet(
     long Id,
     string[] Tags,
     string Title,

@@ -11,9 +11,10 @@ public class MainService
     private readonly IServiceProvider _serviceProvider;
     private readonly IConfiguration _configuration;
     private readonly IMemoryCache _memoryCache;
+    private readonly AppDatabase _database;
 
     public MainService(LobstrService lobstrService, NoCrmService crmService, ILogger<MainService> logger,
-        IServiceProvider serviceProvider, IConfiguration configuration, IMemoryCache memoryCache)
+        IServiceProvider serviceProvider, IConfiguration configuration, IMemoryCache memoryCache, AppDatabase database)
     {
         _lobstrService = lobstrService;
         _crmService = crmService;
@@ -21,6 +22,7 @@ public class MainService
         _serviceProvider = serviceProvider;
         _configuration = configuration;
         _memoryCache = memoryCache;
+        _database = database;
     }
 
     public async Task StartMigration()
@@ -40,48 +42,80 @@ public class MainService
             _logger.LogInformation("Migration already in progress, wait for results");
             return;
         }
-        var uncreatedClustersIdsAndNames = await GetUncreatedCRMListsForClusters();
-        var isUncreatedListsExists = uncreatedClustersIdsAndNames.Any();
-        
-        if (isUncreatedListsExists)
+
+        try
         {
-            foreach (var keyvalue in uncreatedClustersIdsAndNames)
+            var import = new Import()
             {
-                await _crmService.CreateNewProspectingList($"V3 - {keyvalue.Value}  001",
-                    new string[] { keyvalue.Key, keyvalue.Value, "1" }, null);
+                Id = Guid.NewGuid(),
+                Started = DateTime.UtcNow,
+                Status = RunStatus.InProgress
+            };
+            await _database.Imports.AddAsync(import);
+            await _database.SaveChangesAsync();
+            runInfo.Import = import;
+            runInfo.CompletedClusters.Clear();
+            runInfo.Status = RunStatus.InProgress;
+            runInfo.ClustersCount = 0;
+            var uncreatedClustersIdsAndNames = await GetUncreatedCrmListsForClusters();
+            var isUncreatedListsExists = uncreatedClustersIdsAndNames.Any();
+
+            if (isUncreatedListsExists)
+            {
+                foreach (var keyvalue in uncreatedClustersIdsAndNames)
+                {
+                    await _crmService.CreateNewProspectingList($"V3 - {keyvalue.Value}  001",
+                        [keyvalue.Key, keyvalue.Value, "1"], null);
+                }
             }
-        }
 
-        var lists = await _crmService.ListTheProspectingLists();
-        var sheetsByClusters = lists.Values.GroupBy(s => s.clusterId).ToList();
-        var runThreadsCount = _configuration.GetValue<int>("run_threads_count", 1);
-        runInfo.CompletedClusters.Clear();
-        runInfo.Sheets.Clear();
-        runInfo.Status = RunStatus.InProgress;
-        foreach (var group in sheetsByClusters)
+            var lists = await _crmService.ListTheProspectingLists();
+            var sheetsByClusters = lists.Values.GroupBy(s => s.clusterId).ToList();
+            var runThreadsCount = _configuration.GetValue<int>("run_threads_count", 1);
+            runInfo.ClustersCount = sheetsByClusters.Count;
+            await Parallel.ForEachAsync(sheetsByClusters, new ParallelOptions { MaxDegreeOfParallelism = runThreadsCount },
+                async (group, _) =>
+                {
+                    await using var scope = _serviceProvider.CreateAsyncScope();
+                    var loggingFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
+                    var logger = loggingFactory.CreateLogger("Cluster " + group.Key);
+                    logger.LogInformation("Cluster {ClusterId}, {Completed} of {Total}. Started", group.Key,
+                        runInfo.CompletedClusters.Count, runInfo.ClustersCount);
+                    var service = scope.ServiceProvider.GetRequiredService<CrmDataProcessingService>();
+                    var created = await service.RunMigration(group.Key, group.Select(g => g.sheet).ToArray(),
+                        runInfo.Import.Id);
+                    runInfo.CompletedClusters.TryAdd(group.Key, created);
+                    logger.LogInformation(
+                        "Cluster {ClusterId}, {Completed} of {Total}. Completed, Added new {ProspectsCreated} prospects",
+                        group.Key, runInfo.CompletedClusters.Count, runInfo.ClustersCount, created);
+                });
+
+            runInfo.Status = RunStatus.Completed;
+            import.Completed = DateTime.UtcNow;
+            import.Status = RunStatus.Completed;
+            import.AddedCount = runInfo.CompletedClusters.Values.Sum();
+            _database.Update(import);
+            await _database.SaveChangesAsync();
+            _logger.LogInformation("Main service work done");
+            _logger.LogInformation("Successfully uploaded all data to new prospecting lists!");
+        }
+        catch (Exception ex)
         {
-            runInfo.Sheets[group.Key] = group.Select(sheet => (sheet.sheet.Id, sheet.sheet.Title)).ToArray();
+            var import = runInfo.Import;
+            _logger.LogError(ex, "Unable to complete import {ImportId}", import.Id);
+            var error = ex.ToString();
+            import.Error = error;
+            import.Completed = DateTime.UtcNow;
+            import.Status = RunStatus.Error;
+            import.AddedCount = runInfo.CompletedClusters.Values.Sum();
+            _database.Update(import);
+            await _database.SaveChangesAsync();
+            // restart import with retries
+            throw;
         }
-        await Parallel.ForEachAsync(sheetsByClusters, new ParallelOptions(){ MaxDegreeOfParallelism = runThreadsCount },
-            async (group, _) =>
-            {
-                await using var scope = _serviceProvider.CreateAsyncScope();
-                var loggingFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
-                var logger = loggingFactory.CreateLogger("Cluster " + group.Key);
-                logger.LogInformation("Cluster {ClusterId}, {Completed} of {Total}. Started", group.Key, runInfo.CompletedClusters.Count, runInfo.Sheets.Count);
-                var crmDataProcessingService = scope.ServiceProvider.GetRequiredService<CrmDataProcessingService>();
-                await crmDataProcessingService.RunMigration(group.Key, group.Select(g => g.sheet).ToArray());
-                runInfo.CompletedClusters.Add(group.Key);
-                logger.LogInformation("Cluster {ClusterId}, {Completed} of {Total}. Completed", group.Key, runInfo.CompletedClusters.Count, runInfo.Sheets.Count);
-                
-            });
-
-        runInfo.Status = RunStatus.Completed;
-        _logger.LogInformation("Main service work done");
-        _logger.LogInformation("Successfully uploaded all data to new prospecting lists!");
     }
 
-    private async Task<IDictionary<string, string>> GetUncreatedCRMListsForClusters()
+    private async Task<IDictionary<string, string>> GetUncreatedCrmListsForClusters()
     {
         var clusters = await _lobstrService.GetClusterIdsAndNames();
         var listsClusterIdTags = (await _crmService.ListTheProspectingLists()).Values.Select(c => c.clusterId);
@@ -118,5 +152,15 @@ public class MainService
         await crmDataProcessingService.MigrateSheets(lists);
         _logger.LogInformation("Migrate sheets work done");
         _logger.LogInformation("Successfully migrated spreadsheets!");
+    }
+
+    public async Task ImportSheetsToDatabase()
+    {
+        _logger.LogInformation("Started import sheets to database script...");
+        var lists = await _crmService.ListTheProspectingLists();
+        var crmDataProcessingService = _serviceProvider.GetRequiredService<CrmDataProcessingService>();
+
+        await crmDataProcessingService.ImportSheets(lists);
+        _logger.LogInformation("Import sheets to database work done");
     }
 }
