@@ -64,9 +64,18 @@ public class MainService
             {
                 foreach (var keyvalue in uncreatedClustersIdsAndNames)
                 {
-                    await _crmService.CreateNewProspectingList($"V3 - {keyvalue.Value}  001",
+                    var sheet = await _crmService.CreateNewProspectingList($"V3 - {keyvalue.Value}  001",
                         [keyvalue.Key, keyvalue.Value, "1"], null);
+                    var dbSheet = new Spreadsheet()
+                    {
+                        Id = sheet.Id,
+                        ClusterId = sheet.Tags[0],
+                        ClusterName = sheet.Tags[1],
+                        Title = sheet.Title
+                    };
+                    await _database.Spreadsheets.AddAsync(dbSheet);
                 }
+                await _database.SaveChangesAsync();
             }
 
             var lists = await _crmService.ListTheProspectingLists();

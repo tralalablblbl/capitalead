@@ -100,7 +100,8 @@ public class CrmDataProcessingService
                     Id = Guid.NewGuid(),
                     ProcessedDate = DateTime.UtcNow,
                     ProspectsCount = clearDataCount,
-                    RunId = runId
+                    RunId = runId,
+                    ClusterId = clusterId
                 });
             }
             catch (Exception e)
