@@ -5,14 +5,16 @@ namespace Capitalead.Data;
 public class RunInfo
 {
     public RunStatus Status { get; set; }
-    public Dictionary<string, (long sheetId, string title)[]> Sheets { get; } = new ();
-    public ConcurrentBag<string> CompletedClusters { get; } = new();
+    public Import Import { get; set; }
+    public int ClustersCount { get; set; }
+    public ConcurrentDictionary<string, long> CompletedClusters { get; } = new();
 
 }
 
 public enum RunStatus
 {
-    None,
-    InProgress,
-    Completed
+    None = 0,
+    InProgress = 1,
+    Completed = 2,
+    Error = 3
 }

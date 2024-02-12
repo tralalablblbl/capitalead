@@ -15,3 +15,7 @@ Accept: application/json
 GET {{Capitalead_HostAddress}}/api/v1/migrate-sheets
 Accept: application/json
 ###
+
+GET {{Capitalead_HostAddress}}/api/v1/import-sheets
+Accept: application/json
+###

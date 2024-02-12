@@ -13,4 +13,8 @@ public class Prospect
     public string Rooms { get; set; }
     public string Size { get; set; }
     public string Energy { get; set; }
+    public long? SpreadsheetId { get; set; }
+    public Spreadsheet? Spreadsheet { get; set; }
+    public Guid ImportId { get; set; }
+    public Import Import { get; set; }
 }
