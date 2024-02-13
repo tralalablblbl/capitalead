@@ -7,6 +7,7 @@ public class ProcessedRun
     [Key]
     public Guid Id { get; set; }
     public string RunId { get; set; }
+    public string ClusterId { get; set; }
     public long ProspectsCount { get; set; }
     public DateTime ProcessedDate { get; set; }
 }

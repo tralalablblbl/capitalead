@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using Capitalead.Data;
 
 namespace Capitalead.Services;
 
@@ -8,6 +9,7 @@ public class NoCrmService
     private readonly ILogger<NoCrmService> _logger;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IConfiguration _configuration;
+    private readonly AppDatabase _database;
 
     private const string PROSPECTING_LIST_TITLE = "Apartments";
 
@@ -20,11 +22,12 @@ public class NoCrmService
     private const string ROWS_URL = "api/v2/rows";
 
     public NoCrmService(ILogger<NoCrmService> logger, IHttpClientFactory httpClientFactory,
-        IConfiguration configuration)
+        IConfiguration configuration, AppDatabase database)
     {
         _logger = logger;
         _httpClientFactory = httpClientFactory;
         _configuration = configuration;
+        _database = database;
     }
 
     public async Task<(long sheetId, JsonNode[] prospects)[]> UploadDataToCRM(JsonNode[] prospects, string clusterId, NoCrmSpreadsheet[] sheets)
@@ -60,6 +63,14 @@ public class NoCrmService
             unloadedProspects = unloadedProspects.Skip(toUpload.Length).ToList();
             lastSheet = sheet;
             list.Add((sheet.Id, toUpload));
+            var dbSheet = new Spreadsheet()
+            {
+                Id = sheet.Id,
+                ClusterId = clusterId,
+                ClusterName = title,
+                Title = sheet.Title
+            };
+            await _database.Spreadsheets.AddAsync(dbSheet);
         }
 
         return list.ToArray();
