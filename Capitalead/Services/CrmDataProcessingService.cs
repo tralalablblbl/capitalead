@@ -31,10 +31,16 @@ public class CrmDataProcessingService
         _logger.LogDebug("Thread with clusterId {ClusterId} starting", clusterId);
 
         var unloadedApartments = await FindUnloadedClusterDataForList(clusterId);
+        var cluster = await _lobstrService.GetCluster(clusterId);
+        if (cluster == null)
+        {
+            _logger.LogInformation("Cluster {ClusterId} not found in lobstr", clusterId);
+            return 0;
+        }
 
         if (unloadedApartments.Length > 0)
         {
-            var uploadedData = await _crmService.UploadDataToCRM(unloadedApartments, clusterId, sheets);
+            var uploadedData = await _crmService.UploadDataToCRM(unloadedApartments, clusterId, cluster.Name, sheets);
             await SaveApartmentsToDatabase(uploadedData, clusterId, importId);
             _logger.LogInformation("Cluster {ClusterId} stored to nocrm", clusterId);
         }
@@ -136,13 +142,16 @@ public class CrmDataProcessingService
             foreach (var (sheetId, node) in chunk)
             {
                 var apart = node.AsArray();
-                var date = apart[1].GetValue<DateTime?>() ?? DateTime.UtcNow;
+                var parsingDate = DateTime.TryParseExact(apart[1].ToString(), "dd/MM/yyyy",
+                    CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var date)
+                    ? date.ToUniversalTime()
+                    : apart[1].GetValue<DateTime?>() ?? DateTime.UtcNow;
                 var apartment = new Prospect();
                 apartment.Id = Guid.NewGuid();
                 apartment.SpreadsheetId = sheetId;
                 apartment.ImportId = importId;
                 apartment.Neighbourhood = apart[0].GetValue<string>();
-                apartment.ParsingDate = date;
+                apartment.ParsingDate = parsingDate;
                 apartment.RealEstateType = apart[2].GetValue<string>();
                 apartment.Phone = apart[3].GetValue<string>();
                 apartment.Rooms = apart[4].ToString();
@@ -344,7 +353,8 @@ public class CrmDataProcessingService
                 .Select(p => 
                     (JsonNode)new JsonArray(p.prospect.Content.Select(j => (JsonNode)(j?.ToString() ?? string.Empty)).ToArray()))
                 .ToArray();
-            var uploadedData = await _crmService.UploadDataToCRM(unloadedApartments, clusterId, sheets);
+            var cluster = await _lobstrService.GetCluster(clusterId);
+            var uploadedData = await _crmService.UploadDataToCRM(unloadedApartments, clusterId, cluster.Name, sheets);
             //await SaveApartmentsToDatabaseMigrate(uploadedData, group.Key, importId);
             _logger.LogInformation("Cluster {ClusterId} stored to nocrm", clusterId);
         }

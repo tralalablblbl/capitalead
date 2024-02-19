@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 
@@ -83,15 +84,33 @@ public class LobstrService
         {
             var response = await client.GetAsync(LOBSTR_LIST_CLUSTERS_URL);
             response.EnsureSuccessStatusCode();
-            var runs = await response.Content.ReadFromJsonAsync<ListData<Cluster>>() ??
+            var clusters = await response.Content.ReadFromJsonAsync<ListData<Cluster>>() ??
                        throw new ArgumentNullException();
-            return runs.Data.ToDictionary(r => r.Id, r => r.Name);
+            return clusters.Data.Where(c => c.IsActive).ToDictionary(r => r.Id, r => r.Name);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error occurred while request clusters list");
             return new Dictionary<string, string>();
         }
+    }
+
+    public async Task<Cluster?> GetCluster(string clusterId)
+    {
+        var client = GetClient();
+
+        var response = await client.GetAsync($"{LOBSTR_LIST_CLUSTERS_URL}/{clusterId}");
+        if (response.StatusCode == HttpStatusCode.BadRequest)
+        {
+            var error = await response.Content.ReadFromJsonAsync<ErrorsModel>() ??
+                throw new ArgumentNullException();
+            if (error.Errors.Type == "ClusterDoesNotExistException")
+                return null;
+        }
+        response.EnsureSuccessStatusCode();
+        var cluster = await response.Content.ReadFromJsonAsync<Cluster>() ??
+                   throw new ArgumentNullException();
+        return cluster;
     }
 
     private async Task<string[]> ListRunsByClusterId(string id)
@@ -129,5 +148,7 @@ public class LobstrService
 }
 
 public record Run(string Id, string Status);
-public record Cluster(string Id, string Name);
-public record ListData<T>(long Count, long Page, long Limit, T[] Data,[property: JsonPropertyName("total_pages")] long? TotalPages);
+public record Cluster(string Id, string Name, [property: JsonPropertyName("is_active")] bool IsActive);
+public record ListData<T>(long Count, long Page, long Limit, T[] Data, [property: JsonPropertyName("total_pages")] long? TotalPages);
+public record ErrorsModel(ErrorModel Errors);
+public record ErrorModel(string Message, string Type, int Code);
