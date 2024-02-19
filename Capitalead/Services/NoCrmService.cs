@@ -30,7 +30,7 @@ public class NoCrmService
         _database = database;
     }
 
-    public async Task<(long sheetId, JsonNode[] prospects)[]> UploadDataToCRM(JsonNode[] prospects, string clusterId, NoCrmSpreadsheet[] sheets)
+    public async Task<(long sheetId, JsonNode[] prospects)[]> UploadDataToCRM(JsonNode[] prospects, string clusterId, string clusterName, NoCrmSpreadsheet[] sheets)
     {
         _logger.LogInformation("Find unloaded data from cluster {ClusterId}, rows count {Count}", clusterId, prospects.Length);
         var unloadedProspects = prospects.ToList();
@@ -56,10 +56,9 @@ public class NoCrmService
             var index = lastSheet.Tags.Length == 2 ? 0 : int.Parse(lastSheet.Tags[CLUSTER_INDEX_TAG_POSITION]);
             index++;
             var canUpload = 4999;
-            var title = lastSheet.Tags[1];
             var toUpload = unloadedProspects.Take(Math.Min(canUpload, unloadedProspects.Count)).ToArray();
-            var sheet = await CreateNewProspectingList($"V3 - {title} {index:000}",
-                [clusterId, title, index.ToString()], toUpload);
+            var sheet = await CreateNewProspectingList($"V3 - {clusterName} {index:000}",
+                [clusterId, clusterName.Substring(0, Math.Min(clusterName.Length, 50)), index.ToString()], toUpload);
             unloadedProspects = unloadedProspects.Skip(toUpload.Length).ToList();
             lastSheet = sheet;
             list.Add((sheet.Id, toUpload));
@@ -67,7 +66,7 @@ public class NoCrmService
             {
                 Id = sheet.Id,
                 ClusterId = clusterId,
-                ClusterName = title,
+                ClusterName = clusterName,
                 Title = sheet.Title
             };
             await _database.Spreadsheets.AddAsync(dbSheet);
@@ -102,7 +101,7 @@ public class NoCrmService
             {
                 var clusterIdTag = sheet.Tags.FirstOrDefault();
                 // new sheets has index tag
-                if (sheet.Tags.Length == 3 && clusterIdTag?.Length == CLUSTER_ID_LENGTH && !clusterIdTag.Contains(" "))
+                if (sheet.Tags.Length >= 3 && clusterIdTag?.Length == CLUSTER_ID_LENGTH && !clusterIdTag.Contains(" "))
                 {
                     listsNames.Add(sheet.Id, (sheet, clusterIdTag));
                 }
