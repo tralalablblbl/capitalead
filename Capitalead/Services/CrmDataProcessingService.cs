@@ -73,7 +73,7 @@ public class CrmDataProcessingService
                 foreach (var chunk in records.Chunk(200))
                 {
                     var runData = new Dictionary<string, JsonNode>();
-                    foreach (var json in records)
+                    foreach (var json in chunk)
                     {
                         var phone = Helper.GetPhone(json["phone"]?.GetValue<string>());
                         if (string.IsNullOrEmpty(phone))
