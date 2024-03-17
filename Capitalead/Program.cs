@@ -140,6 +140,14 @@ app.MapGet("/api/v1/import-sheets", ([FromServices]IBackgroundJobClient backgrou
     .WithName("import-sheets")
     .WithOpenApi();
 
+app.MapGet("/api/v1/calculate-kpi", ([FromServices]IBackgroundJobClient backgroundJobClient) =>
+    {
+        backgroundJobClient.Enqueue<MainService>(mainService => mainService.CalculateKpi());
+        return Results.Ok();
+    })
+    .WithName("calculate-kpi")
+    .WithOpenApi();
+
 app.Run();
 
 static IAsyncPolicy<HttpResponseMessage> GetRetryPolicy() => HttpPolicyExtensions

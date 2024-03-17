@@ -174,4 +174,13 @@ public class MainService
         await crmDataProcessingService.ImportSheets(lists);
         _logger.LogInformation("Import sheets to database work done");
     }
+
+    public async Task CalculateKpi()
+    {
+        _logger.LogInformation("Started calculate kpi...");
+        var crmDataProcessingService = _serviceProvider.GetRequiredService<CrmDataProcessingService>();
+
+        await crmDataProcessingService.CalculateKpi();
+        _logger.LogInformation("Successfully calculated kpi!");
+    }
 }

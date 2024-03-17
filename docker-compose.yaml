@@ -12,5 +12,6 @@ services:
       - run_migration_cron=${run_migration_cron}
       - nocrm_user_email=${nocrm_user_email}
       - run_threads_count=${run_threads_count}
+      - run_calculate_kpi=${run_calculate_kpi}
     ports:
       - "8055:8080"

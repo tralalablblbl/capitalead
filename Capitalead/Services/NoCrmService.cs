@@ -258,10 +258,18 @@ public record NoCrmSpreadsheet(
     string Title,
     [property: JsonPropertyName("spreadsheet_rows")] NoCrmProspect[]? SpreadsheetRows,
     [property: JsonPropertyName("column_names")] string[] ColumnNames,
+    [property: JsonPropertyName("user")] NoCrmUser User,
     [property: JsonPropertyName("total_row_count")] long TotalRowCount);
 public record NoCrmProspect(
     long Id,
     [property: JsonPropertyName("is_active")]bool IsActive,
-    [property: JsonPropertyName("is_archived")]bool IsArchived,
+    [property: JsonPropertyName("lead_id")]long? LeadId,
     JsonNode[] Content,
     [property: JsonPropertyName("spreadsheet_id")] long? SpreadsheetId);
+public record NoCrmUser(
+    long Id,
+    [property: JsonPropertyName("lastname")]string Lastname,
+    [property: JsonPropertyName("firstname")]string Firstname,
+    [property: JsonPropertyName("email")]string Email,
+    [property: JsonPropertyName("phone")]string Phone,
+    [property: JsonPropertyName("mobile_phone")]string MobilePhone);
