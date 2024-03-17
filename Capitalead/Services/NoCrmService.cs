@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
+using Capitalead.Data;
 
 namespace Capitalead.Services;
 
@@ -8,6 +9,7 @@ public class NoCrmService
     private readonly ILogger<NoCrmService> _logger;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IConfiguration _configuration;
+    private readonly AppDatabase _database;
 
     private const string PROSPECTING_LIST_TITLE = "Apartments";
 
@@ -20,14 +22,15 @@ public class NoCrmService
     private const string ROWS_URL = "api/v2/rows";
 
     public NoCrmService(ILogger<NoCrmService> logger, IHttpClientFactory httpClientFactory,
-        IConfiguration configuration)
+        IConfiguration configuration, AppDatabase database)
     {
         _logger = logger;
         _httpClientFactory = httpClientFactory;
         _configuration = configuration;
+        _database = database;
     }
 
-    public async Task<(long sheetId, JsonNode[] prospects)[]> UploadDataToCRM(JsonNode[] prospects, string clusterId, NoCrmSpreadsheet[] sheets)
+    public async Task<(long sheetId, JsonNode[] prospects)[]> UploadDataToCRM(JsonNode[] prospects, string clusterId, string clusterName, NoCrmSpreadsheet[] sheets)
     {
         _logger.LogInformation("Find unloaded data from cluster {ClusterId}, rows count {Count}", clusterId, prospects.Length);
         var unloadedProspects = prospects.ToList();
@@ -53,13 +56,20 @@ public class NoCrmService
             var index = lastSheet.Tags.Length == 2 ? 0 : int.Parse(lastSheet.Tags[CLUSTER_INDEX_TAG_POSITION]);
             index++;
             var canUpload = 4999;
-            var title = lastSheet.Tags[1];
             var toUpload = unloadedProspects.Take(Math.Min(canUpload, unloadedProspects.Count)).ToArray();
-            var sheet = await CreateNewProspectingList($"V3 - {title} {index:000}",
-                [clusterId, title, index.ToString()], toUpload);
+            var sheet = await CreateNewProspectingList($"V3 - {clusterName} {index:000}",
+                [clusterId, clusterName.Substring(0, Math.Min(clusterName.Length, 50)), index.ToString()], toUpload);
             unloadedProspects = unloadedProspects.Skip(toUpload.Length).ToList();
             lastSheet = sheet;
             list.Add((sheet.Id, toUpload));
+            var dbSheet = new Spreadsheet()
+            {
+                Id = sheet.Id,
+                ClusterId = clusterId,
+                ClusterName = clusterName,
+                Title = sheet.Title
+            };
+            await _database.Spreadsheets.AddAsync(dbSheet);
         }
 
         return list.ToArray();
@@ -91,7 +101,7 @@ public class NoCrmService
             {
                 var clusterIdTag = sheet.Tags.FirstOrDefault();
                 // new sheets has index tag
-                if (sheet.Tags.Length == 3 && clusterIdTag?.Length == CLUSTER_ID_LENGTH && !clusterIdTag.Contains(" "))
+                if (sheet.Tags.Length >= 3 && clusterIdTag?.Length == CLUSTER_ID_LENGTH && !clusterIdTag.Contains(" "))
                 {
                     listsNames.Add(sheet.Id, (sheet, clusterIdTag));
                 }
@@ -248,10 +258,18 @@ public record NoCrmSpreadsheet(
     string Title,
     [property: JsonPropertyName("spreadsheet_rows")] NoCrmProspect[]? SpreadsheetRows,
     [property: JsonPropertyName("column_names")] string[] ColumnNames,
+    [property: JsonPropertyName("user")] NoCrmUser User,
     [property: JsonPropertyName("total_row_count")] long TotalRowCount);
 public record NoCrmProspect(
     long Id,
     [property: JsonPropertyName("is_active")]bool IsActive,
-    [property: JsonPropertyName("is_archived")]bool IsArchived,
+    [property: JsonPropertyName("lead_id")]long? LeadId,
     JsonNode[] Content,
     [property: JsonPropertyName("spreadsheet_id")] long? SpreadsheetId);
+public record NoCrmUser(
+    long Id,
+    [property: JsonPropertyName("lastname")]string Lastname,
+    [property: JsonPropertyName("firstname")]string Firstname,
+    [property: JsonPropertyName("email")]string Email,
+    [property: JsonPropertyName("phone")]string Phone,
+    [property: JsonPropertyName("mobile_phone")]string MobilePhone);

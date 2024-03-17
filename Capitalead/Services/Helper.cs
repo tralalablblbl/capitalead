@@ -16,7 +16,7 @@ public static class Helper
             var apartments = new JsonArray()
             {
                 json["neighborhood"]?.DeepClone() ?? json["city"]?.DeepClone() ?? string.Empty,
-                DateTime.TryParse(json["scraping_time"]?.GetValue<string>().Substring(0, 10) ?? string.Empty, out var date) ? date.ToUniversalTime() : "",
+                DateTime.TryParse(json["scraping_time"]?.GetValue<string>().Substring(0, 10) ?? string.Empty, out var date) ? date.ToUniversalTime().ToString("dd/MM/yyyy") : "",
                 json["breadcrumb"]?.DeepClone() ?? json["real_estate_type"]?.DeepClone() ?? string.Empty,
                 GetPhone(json["phone"]?.GetValue<string>()),
                 json["rooms"]?.DeepClone() ?? json["room_count"]?.DeepClone() ?? string.Empty,

@@ -31,10 +31,16 @@ public class CrmDataProcessingService
         _logger.LogDebug("Thread with clusterId {ClusterId} starting", clusterId);
 
         var unloadedApartments = await FindUnloadedClusterDataForList(clusterId);
+        var cluster = await _lobstrService.GetCluster(clusterId);
+        if (cluster == null)
+        {
+            _logger.LogInformation("Cluster {ClusterId} not found in lobstr", clusterId);
+            return 0;
+        }
 
         if (unloadedApartments.Length > 0)
         {
-            var uploadedData = await _crmService.UploadDataToCRM(unloadedApartments, clusterId, sheets);
+            var uploadedData = await _crmService.UploadDataToCRM(unloadedApartments, clusterId, cluster.Name, sheets);
             await SaveApartmentsToDatabase(uploadedData, clusterId, importId);
             _logger.LogInformation("Cluster {ClusterId} stored to nocrm", clusterId);
         }
@@ -67,7 +73,7 @@ public class CrmDataProcessingService
                 foreach (var chunk in records.Chunk(200))
                 {
                     var runData = new Dictionary<string, JsonNode>();
-                    foreach (var json in records)
+                    foreach (var json in chunk)
                     {
                         var phone = Helper.GetPhone(json["phone"]?.GetValue<string>());
                         if (string.IsNullOrEmpty(phone))
@@ -100,7 +106,8 @@ public class CrmDataProcessingService
                     Id = Guid.NewGuid(),
                     ProcessedDate = DateTime.UtcNow,
                     ProspectsCount = clearDataCount,
-                    RunId = runId
+                    RunId = runId,
+                    ClusterId = clusterId
                 });
             }
             catch (Exception e)
@@ -135,13 +142,16 @@ public class CrmDataProcessingService
             foreach (var (sheetId, node) in chunk)
             {
                 var apart = node.AsArray();
-                var date = apart[1].GetValue<DateTime?>() ?? DateTime.UtcNow;
+                var parsingDate = DateTime.TryParseExact(apart[1].ToString(), "dd/MM/yyyy",
+                    CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var date)
+                    ? date.ToUniversalTime()
+                    : apart[1].GetValue<DateTime?>() ?? DateTime.UtcNow;
                 var apartment = new Prospect();
                 apartment.Id = Guid.NewGuid();
                 apartment.SpreadsheetId = sheetId;
                 apartment.ImportId = importId;
                 apartment.Neighbourhood = apart[0].GetValue<string>();
-                apartment.ParsingDate = date;
+                apartment.ParsingDate = parsingDate;
                 apartment.RealEstateType = apart[2].GetValue<string>();
                 apartment.Phone = apart[3].GetValue<string>();
                 apartment.Rooms = apart[4].ToString();
@@ -343,7 +353,8 @@ public class CrmDataProcessingService
                 .Select(p => 
                     (JsonNode)new JsonArray(p.prospect.Content.Select(j => (JsonNode)(j?.ToString() ?? string.Empty)).ToArray()))
                 .ToArray();
-            var uploadedData = await _crmService.UploadDataToCRM(unloadedApartments, clusterId, sheets);
+            var cluster = await _lobstrService.GetCluster(clusterId);
+            var uploadedData = await _crmService.UploadDataToCRM(unloadedApartments, clusterId, cluster.Name, sheets);
             //await SaveApartmentsToDatabaseMigrate(uploadedData, group.Key, importId);
             _logger.LogInformation("Cluster {ClusterId} stored to nocrm", clusterId);
         }
@@ -442,5 +453,56 @@ public class CrmDataProcessingService
                     await _database.SaveChangesAsync();
             }
         }
+    }
+
+    public async Task CalculateKpi()
+    {
+        var spreadsheets = await _database.Spreadsheets.ToListAsync();
+        var users = await _database.Users.ToListAsync();
+        foreach (var spreadsheet in spreadsheets)
+        {
+            var crmSheet = await _crmService.RetrieveTheProspectingList(spreadsheet.Id);
+            if (crmSheet.SpreadsheetRows == null)
+                continue;
+
+            spreadsheet.ProspectsCount = crmSheet.SpreadsheetRows.Length;
+            spreadsheet.LeadsCount = crmSheet.SpreadsheetRows.Count(s => s.LeadId.HasValue);
+            spreadsheet.DisabledProspectsCount = crmSheet.SpreadsheetRows.Count(s => s.IsActive == false);
+            if (await _database.Prospects.AnyAsync(p => p.SpreadsheetId == spreadsheet.Id))
+            {
+                spreadsheet.LastParsingDate = await _database.Prospects
+                    .Where(p => p.SpreadsheetId == spreadsheet.Id)
+                    .MaxAsync(p => p.ParsingDate);
+            }
+            if (spreadsheet.UserId != crmSheet.User.Id)
+            {
+                var dbUser = users.FirstOrDefault(u => u.Id == crmSheet.User.Id);
+                if (dbUser != default)
+                {
+                    spreadsheet.User = dbUser;
+                    spreadsheet.UserId = dbUser.Id;
+                }
+                else
+                {
+                    var user = new User()
+                    {
+                        Id = crmSheet.User.Id,
+                        Email = crmSheet.User.Email,
+                        Firstname = crmSheet.User.Firstname,
+                        Lastname = crmSheet.User.Lastname,
+                        Phone = crmSheet.User.Phone,
+                        MobilePhone = crmSheet.User.MobilePhone
+                    };
+                    spreadsheet.User = user;
+                    spreadsheet.UserId = crmSheet.User.Id;
+                    await _database.Users.AddAsync(user);
+                    users.Add(user);
+                }
+            }
+
+            _database.Spreadsheets.Update(spreadsheet);
+        }
+
+        await _database.SaveChangesAsync();
     }
 }

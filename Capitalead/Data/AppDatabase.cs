@@ -26,10 +26,15 @@ public class AppDatabase : DbContext
         {
             u.HasIndex(x => x.Title).IsUnique();
             u.HasMany(x => x.Prospects).WithOne(x => x.Spreadsheet).HasForeignKey(x => x.SpreadsheetId);
+            u.HasOne(x => x.User).WithMany(x => x.Spreadsheets).HasForeignKey(x => x.UserId);
         });
         modelBuilder.Entity<Import>(u =>
         {
             u.HasMany(x => x.Prospects).WithOne(x => x.Import).HasForeignKey(x => x.ImportId);
+        });
+        modelBuilder.Entity<User>(u =>
+        {
+            u.HasMany(x => x.Spreadsheets).WithOne(x => x.User).HasForeignKey(x => x.UserId);
         });
     }
 
@@ -38,4 +43,5 @@ public class AppDatabase : DbContext
     public DbSet<DuplicateProspect> DuplicateProspects { get; set; }
     public DbSet<Spreadsheet> Spreadsheets { get; set; }
     public DbSet<Import> Imports { get; set; }
+    public DbSet<User> Users { get; set; }
 }

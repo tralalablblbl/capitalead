@@ -3,6 +3,7 @@ using System;
 using Capitalead.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Capitalead.Migrations
 {
     [DbContext(typeof(AppDatabase))]
-    partial class AppDatabaseModelSnapshot : ModelSnapshot
+    [Migration("20240212165001_AddClusterColumnToProcessed")]
+    partial class AddClusterColumnToProcessed
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -171,66 +174,16 @@ namespace Capitalead.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<long>("DisabledProspectsCount")
-                        .HasColumnType("bigint");
-
-                    b.Property<DateTime?>("LastParsingDate")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<long>("LeadsCount")
-                        .HasColumnType("bigint");
-
-                    b.Property<long>("ProspectsCount")
-                        .HasColumnType("bigint");
-
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasColumnType("text");
-
-                    b.Property<long?>("UserId")
-                        .HasColumnType("bigint");
 
                     b.HasKey("Id");
 
                     b.HasIndex("Title")
                         .IsUnique();
 
-                    b.HasIndex("UserId");
-
                     b.ToTable("Spreadsheets");
-                });
-
-            modelBuilder.Entity("Capitalead.Data.User", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<string>("Email")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("Firstname")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("Lastname")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("MobilePhone")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("Phone")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("Users");
                 });
 
             modelBuilder.Entity("Capitalead.Data.Prospect", b =>
@@ -250,15 +203,6 @@ namespace Capitalead.Migrations
                     b.Navigation("Spreadsheet");
                 });
 
-            modelBuilder.Entity("Capitalead.Data.Spreadsheet", b =>
-                {
-                    b.HasOne("Capitalead.Data.User", "User")
-                        .WithMany("Spreadsheets")
-                        .HasForeignKey("UserId");
-
-                    b.Navigation("User");
-                });
-
             modelBuilder.Entity("Capitalead.Data.Import", b =>
                 {
                     b.Navigation("Prospects");
@@ -267,11 +211,6 @@ namespace Capitalead.Migrations
             modelBuilder.Entity("Capitalead.Data.Spreadsheet", b =>
                 {
                     b.Navigation("Prospects");
-                });
-
-            modelBuilder.Entity("Capitalead.Data.User", b =>
-                {
-                    b.Navigation("Spreadsheets");
                 });
 #pragma warning restore 612, 618
         }

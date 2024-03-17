@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 
@@ -55,7 +56,6 @@ public class LobstrService
             var result = new List<JsonNode>();
             var page = 0;
             long totalPages;
-            var hasMoreData = false;
             do
             {
                 page++;
@@ -65,7 +65,6 @@ public class LobstrService
                            throw new ArgumentNullException();
                 totalPages = runs.TotalPages ?? 0;
                 result.AddRange(runs.Data);
-                hasMoreData = result.Count < runs.Count;
             } while (page < totalPages);
 
             return result.ToArray();
@@ -85,15 +84,33 @@ public class LobstrService
         {
             var response = await client.GetAsync(LOBSTR_LIST_CLUSTERS_URL);
             response.EnsureSuccessStatusCode();
-            var runs = await response.Content.ReadFromJsonAsync<ListData<Cluster>>() ??
+            var clusters = await response.Content.ReadFromJsonAsync<ListData<Cluster>>() ??
                        throw new ArgumentNullException();
-            return runs.Data.ToDictionary(r => r.Id, r => r.Name);
+            return clusters.Data.Where(c => c.IsActive).ToDictionary(r => r.Id, r => r.Name);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error occurred while request clusters list");
             return new Dictionary<string, string>();
         }
+    }
+
+    public async Task<Cluster?> GetCluster(string clusterId)
+    {
+        var client = GetClient();
+
+        var response = await client.GetAsync($"{LOBSTR_LIST_CLUSTERS_URL}/{clusterId}");
+        if (response.StatusCode == HttpStatusCode.BadRequest)
+        {
+            var error = await response.Content.ReadFromJsonAsync<ErrorsModel>() ??
+                throw new ArgumentNullException();
+            if (error.Errors.Type == "ClusterDoesNotExistException")
+                return null;
+        }
+        response.EnsureSuccessStatusCode();
+        var cluster = await response.Content.ReadFromJsonAsync<Cluster>() ??
+                   throw new ArgumentNullException();
+        return cluster;
     }
 
     private async Task<string[]> ListRunsByClusterId(string id)
@@ -104,7 +121,7 @@ public class LobstrService
         {
             var result = new List<string>();
             var page = 0;
-            var hasMoreData = false;
+            long totalPages = 0;
             do
             {
                 page++;
@@ -112,10 +129,10 @@ public class LobstrService
                 response.EnsureSuccessStatusCode();
                 var runs = await response.Content.ReadFromJsonAsync<ListData<Run>>() ??
                            throw new ArgumentNullException();
-                var ids = runs.Data.Select(r => r.Id).ToArray();
+                totalPages = runs.TotalPages ?? 0;
+                var ids = runs.Data.Where(r => r.Status == "done").Select(r => r.Id).ToArray();
                 result.AddRange(ids);
-                hasMoreData = result.Count < runs.Count;
-            } while (hasMoreData);
+            } while (page < totalPages);
 
             return result.ToArray();
         }
@@ -130,6 +147,8 @@ public class LobstrService
     private HttpClient GetClient() => _httpClientFactory.CreateClient(nameof(LobstrService));
 }
 
-public record Run(string Id);
-public record Cluster(string Id, string Name);
-public record ListData<T>(long Count, long Page, long Limit, T[] Data,[property: JsonPropertyName("total_pages")] long? TotalPages);
+public record Run(string Id, string Status);
+public record Cluster(string Id, string Name, [property: JsonPropertyName("is_active")] bool IsActive);
+public record ListData<T>(long Count, long Page, long Limit, T[] Data, [property: JsonPropertyName("total_pages")] long? TotalPages);
+public record ErrorsModel(ErrorModel Errors);
+public record ErrorModel(string Message, string Type, int Code);

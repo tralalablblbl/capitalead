@@ -43,20 +43,20 @@ public class MainService
             return;
         }
 
+        var import = new Import()
+        {
+            Id = Guid.NewGuid(),
+            Started = DateTime.UtcNow,
+            Status = RunStatus.InProgress
+        };
+        await _database.Imports.AddAsync(import);
+        await _database.SaveChangesAsync();
+        runInfo.Import = import;
+        runInfo.CompletedClusters.Clear();
+        runInfo.Status = RunStatus.InProgress;
+        runInfo.ClustersCount = 0;
         try
         {
-            var import = new Import()
-            {
-                Id = Guid.NewGuid(),
-                Started = DateTime.UtcNow,
-                Status = RunStatus.InProgress
-            };
-            await _database.Imports.AddAsync(import);
-            await _database.SaveChangesAsync();
-            runInfo.Import = import;
-            runInfo.CompletedClusters.Clear();
-            runInfo.Status = RunStatus.InProgress;
-            runInfo.ClustersCount = 0;
             var uncreatedClustersIdsAndNames = await GetUncreatedCrmListsForClusters();
             var isUncreatedListsExists = uncreatedClustersIdsAndNames.Any();
 
@@ -64,16 +64,27 @@ public class MainService
             {
                 foreach (var keyvalue in uncreatedClustersIdsAndNames)
                 {
-                    await _crmService.CreateNewProspectingList($"V3 - {keyvalue.Value}  001",
-                        [keyvalue.Key, keyvalue.Value, "1"], null);
+                    var sheet = await _crmService.CreateNewProspectingList($"V3 - {keyvalue.Value}  001",
+                        [keyvalue.Key, keyvalue.Value.Substring(0, Math.Min(keyvalue.Value.Length, 50)), "1"], null);
+                    var dbSheet = new Spreadsheet()
+                    {
+                        Id = sheet.Id,
+                        ClusterId = sheet.Tags[0],
+                        ClusterName = sheet.Tags[1],
+                        Title = sheet.Title
+                    };
+                    await _database.Spreadsheets.AddAsync(dbSheet);
                 }
+
+                await _database.SaveChangesAsync();
             }
 
             var lists = await _crmService.ListTheProspectingLists();
             var sheetsByClusters = lists.Values.GroupBy(s => s.clusterId).ToList();
             var runThreadsCount = _configuration.GetValue<int>("run_threads_count", 1);
             runInfo.ClustersCount = sheetsByClusters.Count;
-            await Parallel.ForEachAsync(sheetsByClusters, new ParallelOptions { MaxDegreeOfParallelism = runThreadsCount },
+            await Parallel.ForEachAsync(sheetsByClusters,
+                new ParallelOptions { MaxDegreeOfParallelism = runThreadsCount },
                 async (group, _) =>
                 {
                     await using var scope = _serviceProvider.CreateAsyncScope();
@@ -101,7 +112,6 @@ public class MainService
         }
         catch (Exception ex)
         {
-            var import = runInfo.Import;
             _logger.LogError(ex, "Unable to complete import {ImportId}", import.Id);
             var error = ex.ToString();
             import.Error = error;
@@ -110,6 +120,7 @@ public class MainService
             import.AddedCount = runInfo.CompletedClusters.Values.Sum();
             _database.Update(import);
             await _database.SaveChangesAsync();
+            runInfo.Status = RunStatus.Error;
             // restart import with retries
             throw;
         }
@@ -162,5 +173,14 @@ public class MainService
 
         await crmDataProcessingService.ImportSheets(lists);
         _logger.LogInformation("Import sheets to database work done");
+    }
+
+    public async Task CalculateKpi()
+    {
+        _logger.LogInformation("Started calculate kpi...");
+        var crmDataProcessingService = _serviceProvider.GetRequiredService<CrmDataProcessingService>();
+
+        await crmDataProcessingService.CalculateKpi();
+        _logger.LogInformation("Successfully calculated kpi!");
     }
 }
