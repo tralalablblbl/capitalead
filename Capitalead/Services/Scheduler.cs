@@ -18,6 +18,13 @@ public class Scheduler : IHostedService
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
+        ScheduleMigrationJob();
+        ScheduleCalculateKpi();
+        return Task.CompletedTask;
+    }
+
+    private void ScheduleMigrationJob()
+    {
         var cron = _configuration["run_migration_cron"];
         _logger.LogInformation("Run migration cron: {Cron}", cron);
         if (!string.IsNullOrEmpty(cron) && cron.ToLower() != "none")
@@ -29,7 +36,21 @@ public class Scheduler : IHostedService
         {
             _logger.LogInformation("Run migration job was not scheduled because 'run-migration-cron' is not configured");
         }
-        return Task.CompletedTask;
+    }
+
+    private void ScheduleCalculateKpi()
+    {
+        var cron = _configuration["run_calculate_kpi"];
+        _logger.LogInformation("Run calculate kpi cron: {Cron}", cron);
+        if (!string.IsNullOrEmpty(cron) && cron.ToLower() != "none")
+        {
+            _recurringJobManager.AddOrUpdate<MainService>("calculatekpijob", mainService => mainService.CalculateKpi(), cron);
+            _logger.LogInformation("Scheduled run calculate kpi job with cron {Cron}", cron);
+        }
+        else
+        {
+            _logger.LogInformation("Run calculate kpi job was not scheduled because 'run_calculate_kpi' is not configured");
+        }
     }
 
     public Task StopAsync(CancellationToken cancellationToken)

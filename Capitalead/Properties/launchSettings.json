@@ -23,6 +23,8 @@
         "nocrm_user_email": "contact@airthermo.fr",
         //"run_migration_cron": "0 0 9 * * *"
         "run_migration_cron": "none",
+        //"run_calculate_kpi": "15 9-22 * * *"
+        "run_calculate_kpi": "none",
         "run_threads_count": "4"
       }
     }

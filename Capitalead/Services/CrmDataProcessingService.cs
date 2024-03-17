@@ -454,4 +454,55 @@ public class CrmDataProcessingService
             }
         }
     }
+
+    public async Task CalculateKpi()
+    {
+        var spreadsheets = await _database.Spreadsheets.ToListAsync();
+        var users = await _database.Users.ToListAsync();
+        foreach (var spreadsheet in spreadsheets)
+        {
+            var crmSheet = await _crmService.RetrieveTheProspectingList(spreadsheet.Id);
+            if (crmSheet.SpreadsheetRows == null)
+                continue;
+
+            spreadsheet.ProspectsCount = crmSheet.SpreadsheetRows.Length;
+            spreadsheet.LeadsCount = crmSheet.SpreadsheetRows.Count(s => s.LeadId.HasValue);
+            spreadsheet.DisabledProspectsCount = crmSheet.SpreadsheetRows.Count(s => s.IsActive == false);
+            if (await _database.Prospects.AnyAsync(p => p.SpreadsheetId == spreadsheet.Id))
+            {
+                spreadsheet.LastParsingDate = await _database.Prospects
+                    .Where(p => p.SpreadsheetId == spreadsheet.Id)
+                    .MaxAsync(p => p.ParsingDate);
+            }
+            if (spreadsheet.UserId != crmSheet.User.Id)
+            {
+                var dbUser = users.FirstOrDefault(u => u.Id == crmSheet.User.Id);
+                if (dbUser != default)
+                {
+                    spreadsheet.User = dbUser;
+                    spreadsheet.UserId = dbUser.Id;
+                }
+                else
+                {
+                    var user = new User()
+                    {
+                        Id = crmSheet.User.Id,
+                        Email = crmSheet.User.Email,
+                        Firstname = crmSheet.User.Firstname,
+                        Lastname = crmSheet.User.Lastname,
+                        Phone = crmSheet.User.Phone,
+                        MobilePhone = crmSheet.User.MobilePhone
+                    };
+                    spreadsheet.User = user;
+                    spreadsheet.UserId = crmSheet.User.Id;
+                    await _database.Users.AddAsync(user);
+                    users.Add(user);
+                }
+            }
+
+            _database.Spreadsheets.Update(spreadsheet);
+        }
+
+        await _database.SaveChangesAsync();
+    }
 }
