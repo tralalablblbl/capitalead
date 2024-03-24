@@ -15,6 +15,7 @@ public class CrmDataProcessingService
     private readonly AppDatabase _database;
     private readonly ILogger<CrmDataProcessingService> _logger;
     private readonly IServiceProvider _serviceProvider;
+    private static readonly Guid DefaultImportId = Guid.Parse("c2d29867-3d0b-d497-9191-18a9d8ee7830");
 
     public CrmDataProcessingService(LobstrService lobstrService, NoCrmService crmService, AppDatabase database,
         ILogger<CrmDataProcessingService> logger, IServiceProvider serviceProvider)
@@ -271,6 +272,10 @@ public class CrmDataProcessingService
                 apartment.Rooms = prospect.Content[4]?.ToString() ?? string.Empty;
                 apartment.Size = prospect.Content[5]?.ToString() ?? string.Empty;
                 apartment.Energy = prospect.Content[6]?.ToString() ?? string.Empty;
+                apartment.SpreadsheetId = prospect.SpreadsheetId;
+                apartment.Disabled = !prospect.IsActive;
+                apartment.LeadId = prospect.LeadId;
+                apartment.ProspectId = prospect.Id;
                 newProspects.Add(apartment);
             }
 
@@ -343,7 +348,6 @@ public class CrmDataProcessingService
 
         var toUpload = oldSheetsData.Values.Where(tuple => !newSheetsData.ContainsKey(tuple.phone)).ToList();
         _logger.LogInformation("Found {Count} prospect to create", toUpload.Count);
-        var importId = Guid.Parse("c2d29867-3d0b-d497-9191-18a9d8ee7830");
         foreach (var group in toUpload.GroupBy(t => t.cluster))
         {
             var clusterId = group.Key;
@@ -355,7 +359,7 @@ public class CrmDataProcessingService
                 .ToArray();
             var cluster = await _lobstrService.GetCluster(clusterId);
             var uploadedData = await _crmService.UploadDataToCRM(unloadedApartments, clusterId, cluster.Name, sheets);
-            //await SaveApartmentsToDatabaseMigrate(uploadedData, group.Key, importId);
+            //await SaveApartmentsToDatabaseMigrate(uploadedData, group.Key, DefaultImportId);
             _logger.LogInformation("Cluster {ClusterId} stored to nocrm", clusterId);
         }
         // foreach (var listId in allList.Keys)
@@ -458,6 +462,7 @@ public class CrmDataProcessingService
     public async Task CalculateKpi()
     {
         var spreadsheets = await _database.Spreadsheets.ToListAsync();
+        //spreadsheets = spreadsheets.Where(s => s.Id == 283237).ToList();
         var users = await _database.Users.ToListAsync();
         foreach (var spreadsheet in spreadsheets)
         {
@@ -468,41 +473,147 @@ public class CrmDataProcessingService
             spreadsheet.ProspectsCount = crmSheet.SpreadsheetRows.Length;
             spreadsheet.LeadsCount = crmSheet.SpreadsheetRows.Count(s => s.LeadId.HasValue);
             spreadsheet.DisabledProspectsCount = crmSheet.SpreadsheetRows.Count(s => s.IsActive == false);
-            if (await _database.Prospects.AnyAsync(p => p.SpreadsheetId == spreadsheet.Id))
+            var dbProspects = await _database.Prospects.Where(p => p.SpreadsheetId == spreadsheet.Id).ToListAsync();
+            if (dbProspects.Any())
             {
-                spreadsheet.LastParsingDate = await _database.Prospects
-                    .Where(p => p.SpreadsheetId == spreadsheet.Id)
-                    .MaxAsync(p => p.ParsingDate);
-            }
-            if (spreadsheet.UserId != crmSheet.User.Id)
-            {
-                var dbUser = users.FirstOrDefault(u => u.Id == crmSheet.User.Id);
-                if (dbUser != default)
-                {
-                    spreadsheet.User = dbUser;
-                    spreadsheet.UserId = dbUser.Id;
-                }
-                else
-                {
-                    var user = new User()
-                    {
-                        Id = crmSheet.User.Id,
-                        Email = crmSheet.User.Email,
-                        Firstname = crmSheet.User.Firstname,
-                        Lastname = crmSheet.User.Lastname,
-                        Phone = crmSheet.User.Phone,
-                        MobilePhone = crmSheet.User.MobilePhone
-                    };
-                    spreadsheet.User = user;
-                    spreadsheet.UserId = crmSheet.User.Id;
-                    await _database.Users.AddAsync(user);
-                    users.Add(user);
-                }
+                spreadsheet.LastParsingDate = dbProspects.Max(p => p.ParsingDate);
             }
 
-            _database.Spreadsheets.Update(spreadsheet);
+            var toCreate = new List<Prospect>();
+            try
+            {
+                foreach (var row in crmSheet.SpreadsheetRows)
+                {
+                    if (row.Content.Length < 4)
+                    {
+                        continue;
+                    }
+
+                    var phone = Helper.GetPhone(row.Content[3]?.GetValue<string>());
+                    if (string.IsNullOrEmpty(phone) || phone.Length < 10)
+                    {
+                        continue;
+                    }
+
+                    var dbProspect = dbProspects.FirstOrDefault(p => p.ProspectId == row.Id);
+                    if (dbProspect == null)
+                    {
+                        dbProspect =
+                            dbProspects.FirstOrDefault(p => p.Phone == phone || p.Phone == $"{phone}_{row.Id}");
+                    }
+                    if (dbProspect is { ProspectId: > 0 } && dbProspect.ProspectId != row.Id)
+                    {
+                        // create new duplicate in database
+                        phone = $"{phone}_{row.Id}";
+                        dbProspect = null;
+                    }
+
+                    if (dbProspect != null)
+                    {
+                        var updated = false;
+                        if (dbProspect.ProspectId != row.Id)
+                        {
+                            dbProspect.ProspectId = row.Id;
+                            updated = true;
+                        }
+
+                        if (dbProspect.Disabled != !row.IsActive)
+                        {
+                            dbProspect.Disabled = !row.IsActive;
+                            updated = true;
+                        }
+
+                        if (dbProspect.LeadId != row.LeadId)
+                        {
+                            dbProspect.LeadId = row.LeadId;
+                            updated = true;
+                        }
+
+                        if (updated)
+                        {
+                            _database.Prospects.Update(dbProspect);
+                        }
+                    }
+                    else
+                    {
+                        var parsingDate = DateTime.TryParseExact(row.Content[1].ToString(), "dd/MM/yyyy",
+                            CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var date)
+                            ? date.ToUniversalTime()
+                            : DateTime.UtcNow;
+                        var apartment = new Prospect();
+                        apartment.Id = Guid.NewGuid();
+                        apartment.Neighbourhood = row.Content[0]?.ToString() ?? string.Empty;
+                        apartment.ParsingDate = parsingDate;
+                        apartment.RealEstateType = row.Content[2]?.ToString() ?? string.Empty;
+                        apartment.Phone = phone;
+                        apartment.Rooms = row.Content.Length > 4
+                            ? row.Content[4]?.ToString() ?? string.Empty
+                            : string.Empty;
+                        apartment.Size = row.Content.Length > 5
+                            ? row.Content[5]?.ToString() ?? string.Empty
+                            : string.Empty;
+                        apartment.Energy = row.Content.Length > 6
+                            ? row.Content[6]?.ToString() ?? string.Empty
+                            : string.Empty;
+                        apartment.SpreadsheetId = crmSheet.Id;
+                        apartment.Disabled = !row.IsActive;
+                        apartment.LeadId = row.LeadId;
+                        apartment.ProspectId = row.Id;
+                        apartment.ImportId = DefaultImportId;
+                        toCreate.Add(apartment);
+                        dbProspects.Add(apartment);
+                    }
+                }
+
+                var allPhones = toCreate.Select(p => p.Phone).Distinct().ToArray();
+                var dbPhones = await _database.Prospects
+                    .Where(u => allPhones.Contains(u.Phone))
+                    .Select(u => u.Phone)
+                    .Distinct()
+                    .ToDictionaryAsync(u => u);
+                foreach (var prospect in toCreate)
+                {
+                    if (dbPhones.ContainsKey(prospect.Phone))
+                    {
+                        prospect.Phone = $"{prospect.Phone}_{prospect.ProspectId}";
+                    }
+                }
+
+                await _database.Prospects.AddRangeAsync(toCreate);
+                if (spreadsheet.UserId != crmSheet.User.Id)
+                {
+                    var dbUser = users.FirstOrDefault(u => u.Id == crmSheet.User.Id);
+                    if (dbUser != default)
+                    {
+                        spreadsheet.User = dbUser;
+                        spreadsheet.UserId = dbUser.Id;
+                    }
+                    else
+                    {
+                        var user = new User()
+                        {
+                            Id = crmSheet.User.Id,
+                            Email = crmSheet.User.Email,
+                            Firstname = crmSheet.User.Firstname,
+                            Lastname = crmSheet.User.Lastname,
+                            Phone = crmSheet.User.Phone,
+                            MobilePhone = crmSheet.User.MobilePhone
+                        };
+                        spreadsheet.User = user;
+                        spreadsheet.UserId = crmSheet.User.Id;
+                        await _database.Users.AddAsync(user);
+                        users.Add(user);
+                    }
+                }
+
+                _database.Spreadsheets.Update(spreadsheet);
+                await _database.SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+                throw;
+            }
         }
 
-        await _database.SaveChangesAsync();
     }
 }

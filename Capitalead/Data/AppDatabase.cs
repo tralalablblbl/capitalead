@@ -15,6 +15,7 @@ public class AppDatabase : DbContext
         modelBuilder.Entity<Prospect>(u =>
         {
             u.HasIndex(x => x.Phone).IsUnique();
+            u.HasIndex(x => x.ProspectId).IsUnique();
             u.HasOne(x => x.Spreadsheet).WithMany(x => x.Prospects).HasForeignKey(x => x.SpreadsheetId);
             u.HasOne(x => x.Import).WithMany(x => x.Prospects).HasForeignKey(x => x.ImportId);
         });
