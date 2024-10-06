@@ -23,3 +23,7 @@ Accept: application/json
 GET {{Capitalead_HostAddress}}/api/v1/calculate-kpi
 Accept: application/json
 ###
+
+GET {{Capitalead_HostAddress}}/api/v1/download-files
+Accept: application/json
+###

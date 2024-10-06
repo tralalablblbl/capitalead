@@ -3,6 +3,7 @@ using System;
 using Capitalead.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,13 +12,15 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Capitalead.Migrations
 {
     [DbContext(typeof(AppDatabase))]
-    partial class AppDatabaseModelSnapshot : ModelSnapshot
+    [Migration("20240323154719_AddKpiProspectsTable")]
+    partial class AddKpiProspectsTable
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "8.0.8")
+                .HasAnnotation("ProductVersion", "8.0.3")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -48,69 +51,6 @@ namespace Capitalead.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("DuplicateProspects");
-                });
-
-            modelBuilder.Entity("Capitalead.Data.ExportedSpreadsheet", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("FileId")
-                        .HasColumnType("uuid");
-
-                    b.Property<long>("SheetId")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("Title")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<long?>("UserId")
-                        .HasColumnType("bigint");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UserId");
-
-                    b.ToTable("ExportedSpreadsheets");
-                });
-
-            modelBuilder.Entity("Capitalead.Data.FileForExport", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("CompletedDate")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime>("Created")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("Exported")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("FileId")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("FileName")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("MimeType")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<long>("ProcessedCount")
-                        .HasColumnType("bigint");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("FileName")
-                        .IsUnique();
-
-                    b.ToTable("FilesForExport");
                 });
 
             modelBuilder.Entity("Capitalead.Data.Import", b =>
@@ -308,23 +248,6 @@ namespace Capitalead.Migrations
                     b.ToTable("Users");
                 });
 
-            modelBuilder.Entity("Capitalead.Data.ExportedSpreadsheet", b =>
-                {
-                    b.HasOne("Capitalead.Data.FileForExport", "File")
-                        .WithMany("Spreadsheets")
-                        .HasForeignKey("Id")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Capitalead.Data.User", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId");
-
-                    b.Navigation("File");
-
-                    b.Navigation("User");
-                });
-
             modelBuilder.Entity("Capitalead.Data.Prospect", b =>
                 {
                     b.HasOne("Capitalead.Data.Import", "Import")
@@ -349,11 +272,6 @@ namespace Capitalead.Migrations
                         .HasForeignKey("UserId");
 
                     b.Navigation("User");
-                });
-
-            modelBuilder.Entity("Capitalead.Data.FileForExport", b =>
-                {
-                    b.Navigation("Spreadsheets");
                 });
 
             modelBuilder.Entity("Capitalead.Data.Import", b =>

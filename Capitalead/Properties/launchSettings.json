@@ -21,6 +21,7 @@
         "lobstr_auth_token": "",
         "nocrm_auth_token": "",
         "nocrm_user_email": "contact@airthermo.fr",
+        "files_store_folder": "/Users/trala/work/capitalead/files",
         //"run_migration_cron": "0 0 9 * * *"
         "run_migration_cron": "none",
         //"run_calculate_kpi": "15 9-22 * * *"

@@ -68,6 +68,8 @@ builder.Services
     .AddTransient<CrmDataProcessingService>()
     .AddTransient<NoCrmService>()
     .AddTransient<MainService>()
+    .AddTransient<GoogleDriveService>()
+    .AddTransient<FilesExporter>()
     .AddHostedService<Scheduler>()
     .AddMemoryCache();
 
@@ -146,6 +148,14 @@ app.MapGet("/api/v1/calculate-kpi", ([FromServices]IBackgroundJobClient backgrou
         return Results.Ok();
     })
     .WithName("calculate-kpi")
+    .WithOpenApi();
+
+app.MapGet("/api/v1/download-files", ([FromServices]IBackgroundJobClient backgroundJobClient) =>
+    {
+        backgroundJobClient.Enqueue<FilesExporter>(service => service.DownloadFiles());
+        return Results.Ok();
+    })
+    .WithName("download-files")
     .WithOpenApi();
 
 app.Run();
