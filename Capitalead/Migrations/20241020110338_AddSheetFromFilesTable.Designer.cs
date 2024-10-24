@@ -3,6 +3,7 @@ using System;
 using Capitalead.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,13 +12,15 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Capitalead.Migrations
 {
     [DbContext(typeof(AppDatabase))]
-    partial class AppDatabaseModelSnapshot : ModelSnapshot
+    [Migration("20241020110338_AddSheetFromFilesTable")]
+    partial class AddSheetFromFilesTable
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "8.0.10")
+                .HasAnnotation("ProductVersion", "8.0.8")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -53,7 +56,6 @@ namespace Capitalead.Migrations
             modelBuilder.Entity("Capitalead.Data.ExportedSpreadsheet", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
                     b.Property<Guid>("FileId")
@@ -70,8 +72,6 @@ namespace Capitalead.Migrations
                         .HasColumnType("bigint");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("FileId");
 
                     b.HasIndex("UserId");
 
@@ -233,7 +233,6 @@ namespace Capitalead.Migrations
             modelBuilder.Entity("Capitalead.Data.SheetFromFile", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
                     b.Property<Guid>("FileId")
@@ -247,8 +246,6 @@ namespace Capitalead.Migrations
                         .HasColumnType("text");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("FileId");
 
                     b.ToTable("SheetsFromFiles");
                 });
@@ -335,7 +332,7 @@ namespace Capitalead.Migrations
                 {
                     b.HasOne("Capitalead.Data.FileForExport", "File")
                         .WithMany("Spreadsheets")
-                        .HasForeignKey("FileId")
+                        .HasForeignKey("Id")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
@@ -369,7 +366,7 @@ namespace Capitalead.Migrations
                 {
                     b.HasOne("Capitalead.Data.FileForExport", "File")
                         .WithMany("ProcessedSheets")
-                        .HasForeignKey("FileId")
+                        .HasForeignKey("Id")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 

@@ -233,7 +233,7 @@ public class NoCrmService
         }
     }
 
-    private async Task<NoCrmSpreadsheet> CreateProspectingList(JsonObject body)
+    public async Task<NoCrmSpreadsheet> CreateProspectingList(JsonObject body)
     {
         var client = GetClient();
 

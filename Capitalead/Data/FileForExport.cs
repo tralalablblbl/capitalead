@@ -12,7 +12,7 @@ public class FileForExport
     public bool Exported { get; set; }
     public DateTime Created { get; set; }
     public DateTime? CompletedDate { get; set; }
-    public long ProcessedCount { get; set; }
+    public ICollection<SheetFromFile> ProcessedSheets { get; set; } = new List<SheetFromFile>();
     public ICollection<ExportedSpreadsheet> Spreadsheets { get; } = new List<ExportedSpreadsheet>();
     
 }

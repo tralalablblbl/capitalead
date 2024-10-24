@@ -158,6 +158,14 @@ app.MapGet("/api/v1/download-files", ([FromServices]IBackgroundJobClient backgro
     .WithName("download-files")
     .WithOpenApi();
 
+app.MapGet("/api/v1/export-file/{fileName}", ([FromServices]IBackgroundJobClient backgroundJobClient, [FromRoute]string fileName) =>
+    {
+        backgroundJobClient.Enqueue<FilesExporter>(service => service.ExportFile(fileName));
+        return Results.Ok();
+    })
+    .WithName("export-file")
+    .WithOpenApi();
+
 app.Run();
 
 static IAsyncPolicy<HttpResponseMessage> GetRetryPolicy() => HttpPolicyExtensions
