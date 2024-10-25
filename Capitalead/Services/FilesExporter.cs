@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json.Nodes;
 using Capitalead.Data;
 using DocumentFormat.OpenXml;
@@ -65,6 +66,11 @@ public class FilesExporter(
                 logger.LogInformation("File {FileName} sheets is empty!", fileName);
                 return;
             }
+
+            var sharedStringTable = workbookPart.SharedStringTablePart.SharedStringTable;
+            var cellFormats = workbookPart.WorkbookStylesPart.Stylesheet.CellFormats;
+            var numberingFormats = workbookPart.WorkbookStylesPart.Stylesheet.NumberingFormats;
+            
             foreach (var sheet in sheets)
             {
                 var sheetName = GetSheetName(sheet);
@@ -86,18 +92,15 @@ public class FilesExporter(
                     await database.SaveChangesAsync();
                 }
 
-                var headers = new JsonArray();
                 var headersRow = rows.FirstOrDefault();
                 if (headersRow == default)
                     continue;
-                var headersList = GetCleanRowData(spreadsheetDocument, headersRow);
-                foreach (var h in headersList)
-                    headers.Add(h);
-                if (headers.Count == 0 || headers.All(h => string.IsNullOrEmpty(h.ToString())))
+                var headersList = GetCleanRowData(sharedStringTable, cellFormats, numberingFormats, headersRow, "TEL FIX");
+                if (headersList.Count == 0 || headersList.All(h => string.IsNullOrEmpty(h.ToString())))
                     continue;
 
-                var content = new JsonArray();
-                content.Add(headers.DeepClone());
+                var content = new List<List<string>>();
+                content.Add(headersList);
 
                 long count = 0;
                 foreach (var r in rows.Skip(1))
@@ -108,19 +111,14 @@ public class FilesExporter(
                         continue;
                     }
 
-                    var prospect = new JsonArray();
-                    var data = GetCleanRowData(spreadsheetDocument, r);
-                    foreach (var text in data)
-                    {
-                        prospect.Add(text);
-                    }
+                    var prospect = GetCleanRowData(sharedStringTable, cellFormats, numberingFormats, r, null);
                     content.Add(prospect);
                     count++;
                     if (content.Count == 5000)
                     {
                         await SaveSheet(content, sheetForExport);
-                        content = new JsonArray();
-                        content.Add(headers.DeepClone());
+                        content.Clear();
+                        content.Add(headersList);
                     }
                 }
                 await SaveSheet(content, sheetForExport);
@@ -134,14 +132,14 @@ public class FilesExporter(
 
         logger.LogInformation("Export file {FileName} script finished....", fileName);
 
-        async Task SaveSheet(JsonArray content, SheetFromFile sheet)
+        async Task SaveSheet(List<List<string>> content, SheetFromFile sheet)
         {
             if (content.Count < 2)
                 return;
             var name = Path.GetFileNameWithoutExtension(fileName);
             var index = (sheet.ProcessedCount + content.Count - 1) / 4999;
-            if (index == 0)
-                index = 1;
+            if (content.Count < 4999)
+                index += 1;
             var noCrmSheet = await CreateNewProspectingList($"{name} {sheet.SheetName} {index:00000}", new[] { fileName, sheet.SheetName }, content, userEmail);
             sheet.ProcessedCount += content.Count - 1;
             database.Update(sheet);
@@ -169,22 +167,64 @@ public class FilesExporter(
         }
     }
 
-    private static string? GetCellValue(SpreadsheetDocument doc, Cell cell)
+    private static string? GetCellValue(SharedStringTable sharedStringTable, CellFormats? cellFormats, NumberingFormats? numberingFormats, Cell cell)
     {
         string? value = cell.CellValue?.InnerText;
-        if (cell.DataType != null && cell.DataType.Value == CellValues.SharedString)
+        if (string.IsNullOrEmpty(value))
+            return value;
+        if (cell.DataType != null)
         {
-            return doc.WorkbookPart.SharedStringTablePart.SharedStringTable.ChildElements[int.Parse(value)].InnerText;
+            if (cell.DataType.Value == CellValues.SharedString)
+            {
+                var content = sharedStringTable.ChildElements[int.Parse(value)].InnerText;
+                return content;
+            }
+            else if (cell.DataType.Value == CellValues.Boolean)
+            {
+                switch (value)
+                {
+                    case "0":
+                        value = "FALSE";
+                        break;
+                    default:
+                        value = "TRUE";
+                        break;
+                }
+
+                return value;
+            }
+        } else if (cell.StyleIndex != null && cell.StyleIndex.HasValue && numberingFormats != null && cellFormats != null)
+        {
+            // look up the style used for the cell
+            int formatStyleIndex = Convert.ToInt32(cell.StyleIndex.Value);
+            var cf = (CellFormat)cellFormats.ElementAt(formatStyleIndex);
+
+            if (cf.NumberFormatId != null)
+            {
+                var numberFormatId = cf.NumberFormatId.Value;
+                var numberingFormat = numberingFormats.Cast<NumberingFormat>().SingleOrDefault(f => f.NumberFormatId.Value == numberFormatId);
+
+                var format = numberingFormat?.FormatCode?.Value;
+                if (long.TryParse(value, out var number))
+                    value = number.ToString(format ?? string.Empty);
+                else if (decimal.TryParse(value, out var decimalNumber))
+                    value = decimalNumber.ToString(format ?? string.Empty);
+                else if (double.TryParse(value, out var doubleNumber))
+                    value = doubleNumber.ToString(format ?? string.Empty);
+            }
         }
+        
         return value;
     }
 
-    private static List<string> GetCleanRowData(SpreadsheetDocument doc, Row row)
+    private static List<string> GetCleanRowData(SharedStringTable sharedStringTable, CellFormats? cellFormats, NumberingFormats? numberingFormats, Row row, string? telephoneColumnName)
     {
         var list = new List<string?>();
         foreach (var c in row.Descendants<Cell>())
         {
-            var text = GetCellValue(doc, c);
+            var text = GetCellValue(sharedStringTable, cellFormats, numberingFormats, c);
+            if (telephoneColumnName != null && telephoneColumnName == text)
+                text = "Téléphone";
             list.Add(text);
         }
 
@@ -201,7 +241,7 @@ public class FilesExporter(
         return list.Cast<string>().ToList();
     }
     
-    private async Task<NoCrmSpreadsheet> CreateNewProspectingList(string listTitle, string[] tags, JsonArray content, string userEmail)
+    private async Task<NoCrmSpreadsheet> CreateNewProspectingList(string listTitle, string[] tags, List<List<string>> content, string userEmail)
     {
         logger.LogInformation("Creating new prospecting list {ListTitle}", listTitle);
         var body = Helper.BuildJsonBodyForCreatingProspList(listTitle, tags, userEmail, content);

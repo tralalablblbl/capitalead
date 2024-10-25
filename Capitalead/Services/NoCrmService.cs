@@ -249,8 +249,31 @@ public class NoCrmService
         throw new NotSupportedException();
     }
 
+    public async Task<NoCrmSpreadsheet> CreateProspectingList(NoCrmCreateSpreadsheetRequest body)
+    {
+        var client = GetClient();
+
+        var response = await client.PostAsJsonAsync(SPREADSHEETS_URL, body);
+        if (response.IsSuccessStatusCode)
+        {
+            _logger.LogInformation("Successfully created new prospecting list!");
+            return await response.Content.ReadFromJsonAsync<NoCrmSpreadsheet>() ?? throw new ArgumentNullException();
+        }
+        _logger.LogError("Error occurred while creating prospecting list {List}! Body: {Body}, Error: {Error}",
+            PROSPECTING_LIST_TITLE, body.ToString(), await response.Content.ReadAsStringAsync());
+        response.EnsureSuccessStatusCode();
+        throw new NotSupportedException();
+    }
+
     private HttpClient GetClient() => _httpClientFactory.CreateClient(nameof(NoCrmService));
 }
+
+public record struct NoCrmCreateSpreadsheetRequest(
+    [property: JsonPropertyName("tags")] string[] Tags,
+    [property: JsonPropertyName("title")] string Title,
+    [property: JsonPropertyName("content")] List<List<string>> Content,
+    [property: JsonPropertyName("description")] string Description,
+    [property: JsonPropertyName("user_id")] string UserId);
 
 public record NoCrmSpreadsheet(
     long Id,

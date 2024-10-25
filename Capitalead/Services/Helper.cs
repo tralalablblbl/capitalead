@@ -52,17 +52,9 @@ public static class Helper
         return jsonObject;
     }
 
-    public static JsonObject BuildJsonBodyForCreatingProspList(string listTitle, string[] tags, string nocrmUserEmail,
-        JsonArray content)
+    public static NoCrmCreateSpreadsheetRequest BuildJsonBodyForCreatingProspList(string listTitle, string[] tags, string nocrmUserEmail,
+        List<List<string>> content)
     {
-        JsonObject jsonObject = new JsonObject();
-        jsonObject["title"] = listTitle;
-
-        jsonObject["content"] = content;
-        jsonObject["description"] = listTitle;
-        jsonObject["tags"] = new JsonArray(tags.Select(t => (JsonNode)t).ToArray());
-        jsonObject["user_id"] = nocrmUserEmail;
-
-        return jsonObject;
+        return new NoCrmCreateSpreadsheetRequest(tags, listTitle, content, listTitle, nocrmUserEmail);
     }
 }
