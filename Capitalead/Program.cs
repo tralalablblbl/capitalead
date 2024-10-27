@@ -75,7 +75,7 @@ builder.Services
 
 builder.Services.AddHangfire(config =>
 {
-    config.UseMemoryStorage();
+    config.UseMemoryStorage(new MemoryStorageOptions { FetchNextJobTimeout = TimeSpan.FromHours(24) });
 });
 builder.Services.AddHangfireServer();
 
