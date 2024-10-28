@@ -107,7 +107,7 @@ public class FilesExporter(
 
                     int currentRow = 1;
                     long count = 0;
-                    List<string>? headersList = null;
+                    List<string> headersList = new List<string>();
                     var data = new List<string?>();
 
                     var content = new List<List<string>>();
@@ -120,6 +120,24 @@ public class FilesExporter(
                         if (reader.ElementType == typeof(Row) && reader.IsStartElement)
                         {
                             var newRow = Convert.ToInt32(reader.Attributes[0].Value);
+                            // Headers row
+                            if (newRow == 2 && currentRow == 1)
+                            {
+                                var cleanData = CleanList(data);
+                                if (cleanData.Count == 0)
+                                {
+                                    logger.LogInformation("Row {CurrentRow} is empty. Finish sheet {SheetName}",
+                                        currentRow, sheetName);
+                                    break;
+                                }
+
+                                headersList.AddRange(cleanData);
+                                content.Add(headersList);
+                                data.Clear();
+                                continue;
+                            }
+
+                            bool afterSkip = false;
                             if (newRow > 1 && count < sheetForExport.ProcessedCount)
                             {
                                 count++;
@@ -128,12 +146,17 @@ public class FilesExporter(
                                 logger.LogInformation("Skip Row {CurrentRow}", currentRow);
                                 continue;
                             }
+                            else if (count == sheetForExport.ProcessedCount && count > 0 && (currentRow == sheetForExport.ProcessedCount + 1))
+                            {
+                                afterSkip = true;
+                                skipRow = false;
+                            }
                             else
                             {
                                 skipRow = false;
                             }
 
-                            if (currentRow != newRow)
+                            if (currentRow != newRow && afterSkip == false)
                             {
                                 var cleanData = CleanList(data);
                                 if (cleanData.Count == 0)
@@ -141,26 +164,16 @@ public class FilesExporter(
                                     logger.LogInformation("Row {CurrentRow} is empty. Finish sheet {SheetName}", currentRow, sheetName);
                                     break;
                                 }
-                                if (currentRow == 1)
+                                count++;
+                                content.Add(cleanData);
+                                if (content.Count == 5000)
                                 {
-                                    headersList = cleanData;
+                                    await SaveSheet(content, sheetForExport, fileForExport, dbUser);
+                                    content.Clear();
                                     content.Add(headersList);
                                 }
-                                else
-                                {
-                                    count++;
-                                    content.Add(cleanData);
-                                    if (content.Count == 5000)
-                                    {
-                                        await SaveSheet(content, sheetForExport, fileForExport, dbUser);
-                                        content.Clear();
-                                        content.Add(headersList);
-                                    }
-                                }
-
                                 data.Clear();
                             }
-
                             currentRow = newRow;
                         }
                         else if (reader.ElementType == typeof(Cell))
