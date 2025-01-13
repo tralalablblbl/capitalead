@@ -23,6 +23,7 @@
         "nocrm_user_email": "contact@airthermo.fr",
         "files_store_folder": "/Users/trala/work/capitalead/files",
         "db_files_store_folder": "/Users/trala/work/capitalead/databases",
+        "db_export_files_store_folder": "/Users/trala/work/capitalead/databases_export",
         //"run_migration_cron": "0 0 9 * * *"
         "run_migration_cron": "none",
         //"run_calculate_kpi": "15 9-22 * * *"

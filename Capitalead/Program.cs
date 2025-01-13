@@ -183,6 +183,14 @@ app.MapGet("/api/v1/export-db-files", ([FromServices]IBackgroundJobClient backgr
     .WithName("export-db-files")
     .WithOpenApi();
 
+app.MapGet("/api/v1/export-to-csv", ([FromServices]IBackgroundJobClient backgroundJobClient) =>
+    {
+        backgroundJobClient.Enqueue<DbFilesExporter>(service => service.ExportToCsv());
+        return Results.Ok();
+    })
+    .WithName("export-to-csv")
+    .WithOpenApi();
+
 app.Run();
 
 static IAsyncPolicy<HttpResponseMessage> GetRetryPolicy() => HttpPolicyExtensions

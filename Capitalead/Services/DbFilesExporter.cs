@@ -1,6 +1,7 @@
+using System.Globalization;
 using Capitalead.Data;
+using CsvHelper;
 using DocumentFormat.OpenXml;
-using DocumentFormat.OpenXml.Office2010.ExcelAc;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Spreadsheet;
 using Microsoft.EntityFrameworkCore;
@@ -271,6 +272,58 @@ public class DbFilesExporter(
         }
     }
 
+    public async Task ExportToCsv()
+    {
+        logger.LogInformation("Started export db prospects to csv script...");
+        try
+        {
+            var folder = configuration["db_export_files_store_folder"] ?? throw new ArgumentNullException("db_export_files_store_folder");
+            var zipCodes = await database.DbProspects.Select(p => p.Zipcode).Distinct().ToListAsync();
+            foreach (var group in zipCodes.GroupBy(v => v?.Substring(0,Math.Min(2, v?.Length ?? 0))))
+            {
+                logger.LogInformation("Started export {Group} zipcodes to csv script...", group.Key);
+                var directory = Path.Combine(folder, group.Key ?? "null");
+                if (!Directory.Exists(directory))
+                    Directory.CreateDirectory(directory);
+                foreach (var zipCode in group)
+                {
+                    logger.LogInformation("Started export {Zipcode} zipcode to csv script...", zipCode);
+                    var iteration = 0;
+                    bool hasMore = false;
+                    do
+                    {
+                        var fileName = $"{zipCode?.Replace("/", "").Replace("\\", "").Replace(".", "")}{(iteration > 0 ? ("_" + iteration.ToString("0000")) : "")}.csv";
+                        var prospects = await database.DbProspects
+                            .Where(p => p.Zipcode == zipCode)
+                            .OrderBy(p => p.Id)
+                            .Skip(iteration * 4999)
+                            .Take(4999)
+                            .Select(p => new ProspectCsv(p.Civilite, p.Name, p.Phone, p.Zipcode))
+                            .ToListAsync();
+                        if (prospects.Any())
+                        {
+                            await using var writer = new StreamWriter(Path.Combine(directory, fileName));
+                            await using var csv = new CsvWriter(writer, CultureInfo.CurrentCulture);
+                            await csv.WriteRecordsAsync(prospects);
+                        }
+
+                        hasMore = prospects.Count == 4999;
+                        iteration++;
+                    } while (hasMore);
+                    
+                    logger.LogInformation("Finished export {Zipcode} zipcode to csv script...", zipCode);
+                }
+                logger.LogInformation("Finished export {Group} zipcodes to csv script...", group.Key);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error while exporting csv files");
+            throw;
+        }
+        logger.LogInformation("Finished export db prospects to csv script...");
+    }
+    
     private static string? GetCellValue(List<string> sharedStringTable, CellFormats? cellFormats,
         NumberingFormats? numberingFormats, Cell cell)
     {

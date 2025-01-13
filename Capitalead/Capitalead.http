@@ -39,3 +39,7 @@ Accept: application/json
 GET {{Capitalead_HostAddress}}/api/v1/export-db-files
 Accept: application/json
 ###
+
+GET {{Capitalead_HostAddress}}/api/v1/export-to-csv
+Accept: application/json
+###
