@@ -51,6 +51,14 @@ public class AppDatabase : DbContext
         {
             u.HasOne(x => x.File).WithMany(x => x.ProcessedSheets).HasForeignKey(x => x.FileId);
         });
+        modelBuilder.Entity<DbFile>(u =>
+        {
+            u.HasMany(x => x.Prospects).WithOne(x => x.File).HasForeignKey(x => x.FileId);
+        });
+        modelBuilder.Entity<DbProspect>(u =>
+        {
+            u.HasOne(x => x.File).WithMany(x => x.Prospects).HasForeignKey(x => x.FileId);
+        });
     }
 
     public DbSet<Prospect> Prospects { get; set; }
@@ -62,4 +70,6 @@ public class AppDatabase : DbContext
     public DbSet<FileForExport> FilesForExport { get; set; }
     public DbSet<ExportedSpreadsheet> ExportedSpreadsheets { get; set; }
     public DbSet<SheetFromFile> SheetsFromFiles { get; set; }
+    public DbSet<DbFile> DbFiles { get; set; }
+    public DbSet<DbProspect> DbProspects { get; set; }
 }

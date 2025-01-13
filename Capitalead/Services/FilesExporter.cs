@@ -27,7 +27,7 @@ public class FilesExporter(
         {
             var fileForExport = new FileForExport()
             {
-                Id = Guid.NewGuid(),
+                Id = Guid.CreateVersion7(),
                 FileName = file.Name,
                 MimeType = file.MimeType,
                 FileId = file.Id,
@@ -93,7 +93,7 @@ public class FilesExporter(
                     {
                         sheetForExport = new SheetFromFile()
                         {
-                            Id = Guid.NewGuid(),
+                            Id = Guid.CreateVersion7(),
                             FileId = fileId,
                             SheetName = sheetName,
                             ProcessedCount = 0
@@ -266,7 +266,7 @@ public class FilesExporter(
                 SheetId = noCrmSheet.Id,
                 Title = noCrmSheet.Title,
                 FileId = fileForExport.Id,
-                Id = Guid.NewGuid(),
+                Id = Guid.CreateVersion7(),
                 UserId = dbUser.Id,
             };
             await database.ExportedSpreadsheets.AddAsync(exportedSpreadsheet);

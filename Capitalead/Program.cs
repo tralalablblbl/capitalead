@@ -70,6 +70,7 @@ builder.Services
     .AddTransient<MainService>()
     .AddTransient<GoogleDriveService>()
     .AddTransient<FilesExporter>()
+    .AddTransient<DbFilesExporter>()
     .AddHostedService<Scheduler>()
     .AddMemoryCache();
 
@@ -164,6 +165,22 @@ app.MapGet("/api/v1/export-file/{fileName}", ([FromServices]IBackgroundJobClient
         return Results.Ok();
     })
     .WithName("export-file")
+    .WithOpenApi();
+
+app.MapGet("/api/v1/create-db-files", ([FromServices]IBackgroundJobClient backgroundJobClient) =>
+    {
+        backgroundJobClient.Enqueue<DbFilesExporter>(service => service.CreateFiles());
+        return Results.Ok();
+    })
+    .WithName("create-db-files")
+    .WithOpenApi();
+
+app.MapGet("/api/v1/export-db-files", ([FromServices]IBackgroundJobClient backgroundJobClient) =>
+    {
+        backgroundJobClient.Enqueue<DbFilesExporter>(service => service.ExportFiles());
+        return Results.Ok();
+    })
+    .WithName("export-db-files")
     .WithOpenApi();
 
 app.Run();

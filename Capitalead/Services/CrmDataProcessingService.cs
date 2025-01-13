@@ -104,7 +104,7 @@ public class CrmDataProcessingService
 
                 newProcessedRuns.Add(new ProcessedRun()
                 {
-                    Id = Guid.NewGuid(),
+                    Id = Guid.CreateVersion7(),
                     ProcessedDate = DateTime.UtcNow,
                     ProspectsCount = clearDataCount,
                     RunId = runId,
@@ -148,7 +148,7 @@ public class CrmDataProcessingService
                     ? date.ToUniversalTime()
                     : apart[1].GetValue<DateTime?>() ?? DateTime.UtcNow;
                 var apartment = new Prospect();
-                apartment.Id = Guid.NewGuid();
+                apartment.Id = Guid.CreateVersion7();
                 apartment.SpreadsheetId = sheetId;
                 apartment.ImportId = importId;
                 apartment.Neighbourhood = apart[0].GetValue<string>();
@@ -189,7 +189,7 @@ public class CrmDataProcessingService
                     ? date.ToUniversalTime()
                     : DateTime.UtcNow;
                 var apartment = new Prospect();
-                apartment.Id = Guid.NewGuid();
+                apartment.Id = Guid.CreateVersion7();
                 apartment.SpreadsheetId = sheetId;
                 apartment.ImportId = importId;
                 apartment.Neighbourhood = apart[0].GetValue<string>();
@@ -250,7 +250,7 @@ public class CrmDataProcessingService
                         continue;
                     duplicates.Add(new DuplicateProspect()
                     {
-                        Id = Guid.NewGuid(),
+                        Id = Guid.CreateVersion7(),
                         Phone = phone,
                         Content = duplicate.Content.Select(c => c?.ToString() ?? string.Empty).ToArray(),
                         Deleted = false,
@@ -264,7 +264,7 @@ public class CrmDataProcessingService
                     ? date.ToUniversalTime()
                     : DateTime.UtcNow;
                 var apartment = new Prospect();
-                apartment.Id = Guid.NewGuid();
+                apartment.Id = Guid.CreateVersion7();
                 apartment.Neighbourhood = prospect.Content[0]?.ToString() ?? string.Empty;
                 apartment.ParsingDate = parsingDate;
                 apartment.RealEstateType = prospect.Content[2]?.ToString() ?? string.Empty;
@@ -541,7 +541,7 @@ public class CrmDataProcessingService
                             ? date.ToUniversalTime()
                             : DateTime.UtcNow;
                         var apartment = new Prospect();
-                        apartment.Id = Guid.NewGuid();
+                        apartment.Id = Guid.CreateVersion7();
                         apartment.Neighbourhood = row.Content[0]?.ToString() ?? string.Empty;
                         apartment.ParsingDate = parsingDate;
                         apartment.RealEstateType = row.Content[2]?.ToString() ?? string.Empty;
