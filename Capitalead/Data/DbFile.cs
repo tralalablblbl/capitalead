@@ -11,11 +11,11 @@ public class DbFile
     public bool ReadyForExport { get; set; }
     public DateTime Created { get; set; }
     public DateTime? CompletedDate { get; set; }
-    public int CiviliteColumn { get; set; }
-    public int FirstnameColumn { get; set; }
-    public int NameColumn { get; set; }
-    public int LastnameColumn { get; set; }
-    public int PhoneColumn { get; set; }
-    public int ZipcodeColumn { get; set; }
+    public IList<int> CiviliteColumns { get; set; } = new List<int>();
+    public IList<int> FirstnameColumns { get; set; } = new List<int>();
+    public IList<int> NameColumns { get; set; } = new List<int>();
+    public IList<int> LastnameColumns { get; set; } = new List<int>();
+    public IList<int> PhoneColumns { get; set; } = new List<int>();
+    public IList<int> ZipcodeColumns { get; set; } = new List<int>();
     public ICollection<DbProspect> Prospects { get; set; } = new List<DbProspect>();
 }

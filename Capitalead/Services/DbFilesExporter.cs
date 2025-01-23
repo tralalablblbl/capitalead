@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.RegularExpressions;
 using Capitalead.Data;
 using CsvHelper;
 using DocumentFormat.OpenXml;
@@ -13,6 +14,8 @@ public class DbFilesExporter(
     AppDatabase database,
     IConfiguration configuration)
 {
+    const string Letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    static Regex ZipCodeRegex = new Regex(@"\d{5}");
     public async Task CreateFiles()
     {
         logger.LogInformation("Started Create db files script...");
@@ -101,17 +104,27 @@ public class DbFilesExporter(
 
                             int currentRow = 1;
                             long count = 0;
-                            List<string> headersList = new List<string>();
+                            List<string?> headersList = new List<string?>();
                             var data = new List<string?>();
                             bool skipRow = false;
                             var prospects = new List<DbProspect>();
 
                             //Open Stream
                             OpenXmlReader reader = OpenXmlReader.Create(worksheetPart);
+                            int currentIndex = -1;
                             while (reader.Read())
                             {
+                                if (currentRow == 20350)
+                                {
+                                    var test = 1;
+                                }
                                 if (reader.ElementType == typeof(Row) && reader.IsStartElement)
                                 {
+                                    currentIndex = -1;
+                                    if (currentRow == 20350)
+                                    {
+                                        var test = 1;
+                                    }
                                     var newRow = Convert.ToInt32(reader.Attributes[0].Value);
                                     // Headers row
                                     if (newRow == 2 && currentRow == 1)
@@ -152,6 +165,10 @@ public class DbFilesExporter(
 
                                     if (currentRow != newRow && afterSkip == false)
                                     {
+                                        if (currentRow == 20350)
+                                        {
+                                            var test = 1;
+                                        }
                                         var cleanData = CleanList(data);
                                         if (cleanData.Count == 0)
                                         {
@@ -162,7 +179,11 @@ public class DbFilesExporter(
 
                                         count++;
                                         var prospect = GetProspect(cleanData, file, sheetName, currentRow);
-                                        prospects.Add(prospect);
+                                        if (!string.IsNullOrEmpty(prospect.Name) ||
+                                            !string.IsNullOrEmpty(prospect.Civilite) ||
+                                            !string.IsNullOrEmpty(prospect.Phone) ||
+                                            !string.IsNullOrEmpty(prospect.Zipcode))
+                                            prospects.Add(prospect);
                                         if (prospects.Count >= 5000)
                                         {
                                             logger.LogInformation(
@@ -179,12 +200,24 @@ public class DbFilesExporter(
                                 }
                                 else if (reader.ElementType == typeof(Cell))
                                 {
+                                    if (currentRow == 20350)
+                                    {
+                                        var test = 1;
+                                    }
                                     //If a cell is empty, the cell node doesn't exist in XML.
                                     Cell cellValue = (Cell)reader.LoadCurrentElement(); //this skip the EndElement
 
+                                    var index = Letters.IndexOf(cellValue.CellReference.Value.Replace(currentRow.ToString(), string.Empty));
+                                    // If previous column is empty
+                                    while (index > currentIndex + 1)
+                                    {
+                                        data.Add(null);
+                                        currentIndex++;
+                                    }
                                     var text = GetCellValue(sharedStrings, cellFormats, numberingFormats, cellValue);
 
                                     data.Add(text);
+                                    currentIndex = index;
                                 }
 
                             }
@@ -197,9 +230,10 @@ public class DbFilesExporter(
                         }
                     }
 
-                    file.CompletedDate = DateTime.UtcNow;
-                    file.Exported = true;
-                    database.DbFiles.Update(file);
+                    await database.DbFiles.Where(f => f.Id == file.Id)
+                        .ExecuteUpdateAsync(setters => setters
+                            .SetProperty(f => f.CompletedDate, DateTime.UtcNow)
+                            .SetProperty(f => f.Exported, true));
                     await database.SaveChangesAsync();
                 }
                 catch (Exception ex)
@@ -219,7 +253,7 @@ public class DbFilesExporter(
             await database.SaveChangesAsync();
         }
 
-        static DbProspect GetProspect(List<string> content, DbFile file, string sheetName, long rowNumber)
+        static DbProspect GetProspect(List<string?> content, DbFile file, string sheetName, long rowNumber)
         {
             var dbProspect = new DbProspect()
             {
@@ -228,27 +262,40 @@ public class DbFilesExporter(
                 SheetName = sheetName,
                 RowNumber = rowNumber,
             };
-            if (file.CiviliteColumn > -1 && content.Count > file.CiviliteColumn)
-                dbProspect.Civilite = GetCivilite(content[file.CiviliteColumn]);
-            if (file.PhoneColumn > -1 && content.Count > file.PhoneColumn)
-                dbProspect.Phone = content[file.PhoneColumn];
-            if (file.ZipcodeColumn > -1 && content.Count > file.ZipcodeColumn)
-                dbProspect.Zipcode = content[file.ZipcodeColumn]?.Trim('|', ' ');
-            if (file.FirstnameColumn > -1 && content.Count > file.FirstnameColumn)
+            dbProspect.Civilite = GetCivilite(GetData(file.CiviliteColumns, content));
+            dbProspect.Phone = GetData(file.PhoneColumns, content).Trim('|', ' ', '\'');
+            dbProspect.Zipcode = GetZipCode(GetData(file.ZipcodeColumns, content).Trim('|', ' ', '\''));
+            var name = GetData(file.NameColumns, content);
+            var firstName = GetData(file.FirstnameColumns, content);
+            var lastName = GetData(file.LastnameColumns, content);
+            if (!string.IsNullOrEmpty(name))
+                dbProspect.Name = name.Trim();
+            else if (!string.IsNullOrEmpty(firstName))
             {
-                dbProspect.Name = content[file.FirstnameColumn];
-                if (file.LastnameColumn > -1 && content.Count > file.LastnameColumn)
-                    dbProspect.Name += " " + content[file.LastnameColumn];
+                dbProspect.Name = firstName.Trim();
+                if (!string.IsNullOrEmpty(lastName))
+                    dbProspect.Name += " " + lastName.Trim();
             }
-
-            if (file.NameColumn > -1 && content.Count > file.NameColumn)
-            {
-                dbProspect.Name = content[file.NameColumn];
-            }
+            
             return dbProspect;
         }
 
-        static string GetCivilite(string data)
+        static string GetData(IList<int> columns, List<string?> content)
+        {
+            foreach (var column in columns)
+            {
+                if (column > -1 && content.Count > column)
+                {
+                    var data = content[column];
+                    if (!string.IsNullOrEmpty(data))
+                        return data;
+                }
+            }
+
+            return string.Empty;
+        }
+
+        static string GetCivilite(string? data)
         {
             if (string.IsNullOrEmpty(data))
                 return string.Empty;
@@ -257,6 +304,17 @@ public class DbFilesExporter(
                 return "Mrs";
             if (lower.StartsWith("male") || lower.StartsWith("monsieur") || lower.StartsWith("m"))
                 return "Mr";
+            return string.Empty;
+        }
+
+        static string GetZipCode(string? data)
+        {
+            if (string.IsNullOrEmpty(data))
+                return string.Empty;
+            if (data.Length == 5)
+                return data;
+            if (ZipCodeRegex.IsMatch(data))
+                return ZipCodeRegex.Match(data).Groups[0].Value;
             return string.Empty;
         }
 
@@ -278,41 +336,53 @@ public class DbFilesExporter(
         try
         {
             var folder = configuration["db_export_files_store_folder"] ?? throw new ArgumentNullException("db_export_files_store_folder");
-            var zipCodes = await database.DbProspects.Select(p => p.Zipcode).Distinct().ToListAsync();
+            var zipCodes = await database.DbProspects
+                .Where(p => p.Phone != null && p.Phone != "")
+                .Select(p => p.Zipcode).Distinct().ToListAsync();
             foreach (var group in zipCodes.GroupBy(v => v?.Substring(0,Math.Min(2, v?.Length ?? 0))))
             {
+                var key = group.Key;
                 logger.LogInformation("Started export {Group} zipcodes to csv script...", group.Key);
-                var directory = Path.Combine(folder, group.Key ?? "null");
+                var dirName = key?.Replace("/", "").Replace("\\", "").Replace(".", "");
+                if (string.IsNullOrEmpty(dirName))
+                    dirName = "empty";
+                var directory = Path.Combine(folder, dirName);
                 if (!Directory.Exists(directory))
                     Directory.CreateDirectory(directory);
-                foreach (var zipCode in group)
+                var query = database.DbProspects.AsQueryable();
+                if (string.IsNullOrEmpty(key))
+                    query = query.Where(v => v.Zipcode == "" || v.Zipcode == null);
+                else
+                    query = query.Where(v => v.Zipcode.StartsWith(key));
+                var allProspects = (await query
+                    .Where(p => p.Phone != null && p.Phone != "")
+                    .OrderBy(p => p.Zipcode)
+                    .ThenBy(p => p.Phone)
+                    .Select(p => new ProspectCsv(p.Civilite, p.Name, "'" + p.Phone, p.Zipcode != null ? ("'" + p.Zipcode) : null))
+                    .ToListAsync()
+                    ).DistinctBy(p => p.Phone)
+                    .ToList();
+                var iteration = 0;
+                bool hasMore = false;
+                do
                 {
-                    logger.LogInformation("Started export {Zipcode} zipcode to csv script...", zipCode);
-                    var iteration = 0;
-                    bool hasMore = false;
-                    do
+                    var fileName = $"{dirName}xxx{(iteration > 0 ? ("_" + iteration.ToString("0000")) : "")}.csv";
+                    var prospects = allProspects
+                        .Skip(iteration * 4999)
+                        .Take(4999)
+                        .ToList();
+                    if (prospects.Any())
                     {
-                        var fileName = $"{zipCode?.Replace("/", "").Replace("\\", "").Replace(".", "")}{(iteration > 0 ? ("_" + iteration.ToString("0000")) : "")}.csv";
-                        var prospects = await database.DbProspects
-                            .Where(p => p.Zipcode == zipCode)
-                            .OrderBy(p => p.Id)
-                            .Skip(iteration * 4999)
-                            .Take(4999)
-                            .Select(p => new ProspectCsv(p.Civilite, p.Name, p.Phone, p.Zipcode))
-                            .ToListAsync();
-                        if (prospects.Any())
-                        {
-                            await using var writer = new StreamWriter(Path.Combine(directory, fileName));
-                            await using var csv = new CsvWriter(writer, CultureInfo.CurrentCulture);
-                            await csv.WriteRecordsAsync(prospects);
-                        }
+                        await using var writer = new StreamWriter(Path.Combine(directory, fileName));
+                        await using var csv = new CsvWriter(writer, CultureInfo.CurrentCulture);
+                        await csv.WriteRecordsAsync(prospects);
+                        logger.LogInformation("Exported {File}", fileName);
+                    }
 
-                        hasMore = prospects.Count == 4999;
-                        iteration++;
-                    } while (hasMore);
-                    
-                    logger.LogInformation("Finished export {Zipcode} zipcode to csv script...", zipCode);
-                }
+                    hasMore = prospects.Count == 4999;
+                    iteration++;
+                } while (hasMore);
+
                 logger.LogInformation("Finished export {Group} zipcodes to csv script...", group.Key);
             }
         }
@@ -388,7 +458,7 @@ public class DbFilesExporter(
         }
     }
 
-    private static List<string> GetCleanRowData(List<string> sharedStringTable, CellFormats? cellFormats,
+    private static List<string?> GetCleanRowData(List<string> sharedStringTable, CellFormats? cellFormats,
         NumberingFormats? numberingFormats, Row row, string? telephoneColumnName)
     {
         var list = new List<string?>();
@@ -403,7 +473,7 @@ public class DbFilesExporter(
         return CleanList(list);
     }
 
-    private static List<string> CleanList(List<string?> list)
+    private static List<string?> CleanList(List<string?> list)
     {
         if (list.Count == 0)
             return [];
@@ -416,7 +486,7 @@ public class DbFilesExporter(
             last = list.Last();
         }
 
-        return list.Cast<string>().ToList();
+        return list;
     }
     
     private static List<string> GetSharedString(SharedStringTablePart sharedStringTablePart)
