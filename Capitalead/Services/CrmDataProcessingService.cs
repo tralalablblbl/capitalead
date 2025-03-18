@@ -30,14 +30,15 @@ public class CrmDataProcessingService
     public async Task<long> RunMigration(string clusterId, NoCrmSpreadsheet[] sheets, Guid importId)
     {
         _logger.LogDebug("Thread with clusterId {ClusterId} starting", clusterId);
-
-        var unloadedApartments = await FindUnloadedClusterDataForList(clusterId);
         var cluster = await _lobstrService.GetCluster(clusterId);
         if (cluster == null)
         {
             _logger.LogInformation("Cluster {ClusterId} not found in lobstr", clusterId);
             return 0;
         }
+
+        var unloadedApartments = await FindUnloadedClusterDataForList(clusterId);
+        
 
         if (unloadedApartments.Length > 0)
         {
@@ -221,7 +222,8 @@ public class CrmDataProcessingService
         foreach (var listId in allList.Keys)
         {
             var sheet = await _crmService.RetrieveTheProspectingList(listId);
-            allSheets.Add(sheet.Id, sheet);
+            if (sheet != null)
+                allSheets.Add(sheet.Id, sheet);
         }
 
         var groupedByPhone = allSheets.Values
@@ -316,7 +318,7 @@ public class CrmDataProcessingService
         foreach (var (sheet, clusterId) in toMigrate.Values)
         {
             var oldSheet = await _crmService.RetrieveTheProspectingList(sheet.Id);
-            if (oldSheet.SpreadsheetRows == null)
+            if (oldSheet?.SpreadsheetRows == null)
                 continue;
             foreach (var prospect in oldSheet.SpreadsheetRows)
             {
@@ -333,7 +335,7 @@ public class CrmDataProcessingService
         foreach (var (sheet, clusterId) in newSheets.Values)
         {
             var newSheet = await _crmService.RetrieveTheProspectingList(sheet.Id);
-            if (newSheet.SpreadsheetRows == null)
+            if (newSheet?.SpreadsheetRows == null)
                 continue;
             foreach (var prospect in newSheet.SpreadsheetRows)
             {
@@ -438,7 +440,7 @@ public class CrmDataProcessingService
         foreach (var (sheet, _) in allList.Values)
         {
             var data = await _crmService.RetrieveTheProspectingList(sheet.Id);
-            if (data.SpreadsheetRows == null)
+            if (data?.SpreadsheetRows == null)
                 continue;
             foreach (var chunk in data.SpreadsheetRows.Where(p => p.Content.Length > 3).Chunk(200))
             {
@@ -467,7 +469,7 @@ public class CrmDataProcessingService
         foreach (var spreadsheet in spreadsheets)
         {
             var crmSheet = await _crmService.RetrieveTheProspectingList(spreadsheet.Id);
-            if (crmSheet.SpreadsheetRows == null)
+            if (crmSheet?.SpreadsheetRows == null)
                 continue;
 
             spreadsheet.ProspectsCount = crmSheet.SpreadsheetRows.Length;

@@ -358,7 +358,7 @@ public class DbFilesExporter(
                     .Where(p => p.Phone != null && p.Phone != "")
                     .OrderBy(p => p.Zipcode)
                     .ThenBy(p => p.Phone)
-                    .Select(p => new ProspectCsv(p.Civilite, p.Name, "'" + p.Phone, p.Zipcode != null ? ("'" + p.Zipcode) : null))
+                    .Select(p => new ProspectCsv(p.Civilite, p.Name, p.Phone, p.Zipcode != null ? (p.Zipcode) : null))
                     .ToListAsync()
                     ).DistinctBy(p => p.Phone)
                     .ToList();

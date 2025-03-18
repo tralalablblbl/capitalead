@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Capitalead.Data;
@@ -143,7 +144,7 @@ public class NoCrmService
             $"Error occurred while listing all prospecting lists ToMigrate!, status: {response.StatusCode}, error: {await response.Content.ReadAsStringAsync()}");
     }
 
-    public async Task<NoCrmSpreadsheet> RetrieveTheProspectingList(long listId)
+    public async Task<NoCrmSpreadsheet?> RetrieveTheProspectingList(long listId)
     {
         var client = GetClient();
         var response = await client.GetAsync($"{SPREADSHEETS_URL}/{listId}");
@@ -154,6 +155,11 @@ public class NoCrmService
         }
         else
         {
+            if (response.StatusCode == HttpStatusCode.NotFound)
+            {
+                _logger.LogInformation("Prospecting list {ListId} was not found!", listId);
+                return null;
+            }
             _logger.LogError("Error occurred while retrieving prospecting list {ListId}!", listId);
             throw new ApplicationException(
                 $"Error occurred while retrieving prospecting list  {listId} !, status: {response.StatusCode}, error: {await response.Content.ReadAsStringAsync()}");
