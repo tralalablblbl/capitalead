@@ -15,6 +15,7 @@ public class AppDatabase : DbContext
         modelBuilder.Entity<Prospect>(u =>
         {
             u.HasIndex(x => x.Phone).IsUnique();
+            u.HasIndex(x => x.ProspectId).IsUnique();
             u.HasOne(x => x.Spreadsheet).WithMany(x => x.Prospects).HasForeignKey(x => x.SpreadsheetId);
             u.HasOne(x => x.Import).WithMany(x => x.Prospects).HasForeignKey(x => x.ImportId);
         });
@@ -36,6 +37,28 @@ public class AppDatabase : DbContext
         {
             u.HasMany(x => x.Spreadsheets).WithOne(x => x.User).HasForeignKey(x => x.UserId);
         });
+        modelBuilder.Entity<FileForExport>(u =>
+        {
+            u.HasIndex(x => x.FileName).IsUnique();
+            u.HasMany(x => x.Spreadsheets).WithOne(x => x.File).HasForeignKey(x => x.FileId);
+            u.HasMany(x => x.ProcessedSheets).WithOne(x => x.File).HasForeignKey(x => x.FileId);
+        });
+        modelBuilder.Entity<ExportedSpreadsheet>(u =>
+        {
+            u.HasOne(x => x.File).WithMany(x => x.Spreadsheets).HasForeignKey(x => x.FileId);
+        });
+        modelBuilder.Entity<SheetFromFile>(u =>
+        {
+            u.HasOne(x => x.File).WithMany(x => x.ProcessedSheets).HasForeignKey(x => x.FileId);
+        });
+        modelBuilder.Entity<DbFile>(u =>
+        {
+            u.HasMany(x => x.Prospects).WithOne(x => x.File).HasForeignKey(x => x.FileId);
+        });
+        modelBuilder.Entity<DbProspect>(u =>
+        {
+            u.HasOne(x => x.File).WithMany(x => x.Prospects).HasForeignKey(x => x.FileId);
+        });
     }
 
     public DbSet<Prospect> Prospects { get; set; }
@@ -44,4 +67,9 @@ public class AppDatabase : DbContext
     public DbSet<Spreadsheet> Spreadsheets { get; set; }
     public DbSet<Import> Imports { get; set; }
     public DbSet<User> Users { get; set; }
+    public DbSet<FileForExport> FilesForExport { get; set; }
+    public DbSet<ExportedSpreadsheet> ExportedSpreadsheets { get; set; }
+    public DbSet<SheetFromFile> SheetsFromFiles { get; set; }
+    public DbSet<DbFile> DbFiles { get; set; }
+    public DbSet<DbProspect> DbProspects { get; set; }
 }

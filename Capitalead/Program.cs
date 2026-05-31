@@ -21,7 +21,9 @@ builder.Configuration.AddEnvironmentVariables();
 builder.Host.UseSerilog((context, services, configuration) => configuration
     .ReadFrom.Configuration(context.Configuration)
     .ReadFrom.Services(services)
-    .WriteTo.Console()
+    .Enrich.FromLogContext()
+    .WriteTo.Console(outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss} [{Level}] {Message}{NewLine}{Exception}")
+            
 );
 
 // Add services to the container.
@@ -68,12 +70,15 @@ builder.Services
     .AddTransient<CrmDataProcessingService>()
     .AddTransient<NoCrmService>()
     .AddTransient<MainService>()
+    .AddTransient<GoogleDriveService>()
+    .AddTransient<FilesExporter>()
+    .AddTransient<DbFilesExporter>()
     .AddHostedService<Scheduler>()
     .AddMemoryCache();
 
 builder.Services.AddHangfire(config =>
 {
-    config.UseMemoryStorage();
+    config.UseMemoryStorage(new MemoryStorageOptions { FetchNextJobTimeout = TimeSpan.FromHours(24) });
 });
 builder.Services.AddHangfireServer();
 
@@ -146,6 +151,46 @@ app.MapGet("/api/v1/calculate-kpi", ([FromServices]IBackgroundJobClient backgrou
         return Results.Ok();
     })
     .WithName("calculate-kpi")
+    .WithOpenApi();
+
+app.MapGet("/api/v1/download-files", ([FromServices]IBackgroundJobClient backgroundJobClient) =>
+    {
+        backgroundJobClient.Enqueue<FilesExporter>(service => service.DownloadFiles());
+        return Results.Ok();
+    })
+    .WithName("download-files")
+    .WithOpenApi();
+
+app.MapGet("/api/v1/export-file/{fileName}", ([FromServices]IBackgroundJobClient backgroundJobClient, [FromRoute]string fileName) =>
+    {
+        backgroundJobClient.Enqueue<FilesExporter>(service => service.ExportFile(fileName));
+        return Results.Ok();
+    })
+    .WithName("export-file")
+    .WithOpenApi();
+
+app.MapGet("/api/v1/create-db-files", ([FromServices]IBackgroundJobClient backgroundJobClient) =>
+    {
+        backgroundJobClient.Enqueue<DbFilesExporter>(service => service.CreateFiles());
+        return Results.Ok();
+    })
+    .WithName("create-db-files")
+    .WithOpenApi();
+
+app.MapGet("/api/v1/export-db-files", ([FromServices]IBackgroundJobClient backgroundJobClient) =>
+    {
+        backgroundJobClient.Enqueue<DbFilesExporter>(service => service.ExportFiles());
+        return Results.Ok();
+    })
+    .WithName("export-db-files")
+    .WithOpenApi();
+
+app.MapGet("/api/v1/export-to-csv", ([FromServices]IBackgroundJobClient backgroundJobClient) =>
+    {
+        backgroundJobClient.Enqueue<DbFilesExporter>(service => service.ExportToCsv());
+        return Results.Ok();
+    })
+    .WithName("export-to-csv")
     .WithOpenApi();
 
 app.Run();

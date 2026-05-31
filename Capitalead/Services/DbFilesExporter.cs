@@ -1,0 +1,504 @@
+using System.Globalization;
+using System.Text.RegularExpressions;
+using Capitalead.Data;
+using CsvHelper;
+using DocumentFormat.OpenXml;
+using DocumentFormat.OpenXml.Packaging;
+using DocumentFormat.OpenXml.Spreadsheet;
+using Microsoft.EntityFrameworkCore;
+
+namespace Capitalead.Services;
+
+public class DbFilesExporter(
+    ILogger<DbFilesExporter> logger,
+    AppDatabase database,
+    IConfiguration configuration)
+{
+    const string Letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    static Regex ZipCodeRegex = new Regex(@"\d{5}");
+    public async Task CreateFiles()
+    {
+        logger.LogInformation("Started Create db files script...");
+
+        logger.LogInformation("Collect files from folder");
+        var files = LoadFiles();
+        logger.LogInformation("Collected files from folder");
+        foreach (var file in files)
+        {
+            await database.DbFiles.AddAsync(file);
+        }
+
+        await database.SaveChangesAsync();
+        logger.LogInformation("Saved files to database");
+
+        logger.LogInformation("Successfully created db files!");
+    }
+    
+    public IList<DbFile> LoadFiles()
+    {
+        var folder = configuration["db_files_store_folder"] ?? throw new ArgumentNullException("db_files_store_folder");
+        var files = new List<DbFile>();
+        foreach (var fileName in Directory.EnumerateFiles(folder))
+        {
+            var name = Path.GetFileName(fileName);
+            if (name.StartsWith("~"))
+                continue;
+            files.Add(new DbFile()
+            {
+                Id = Guid.CreateVersion7(),
+                FileName = name,
+                Exported = false,
+                Created = DateTime.UtcNow,
+                ReadyForExport = false
+            });
+        }
+        return files;
+    }
+
+    public async Task ExportFiles()
+    {
+            logger.LogInformation("Started export db files script...");
+            var files = await database.DbFiles.Where(f => f.ReadyForExport && !f.Exported).ToListAsync();
+            foreach (var file in files)
+            {
+                try
+                {
+                    var fileId = file.Id;
+                    var saveFolder = configuration["db_files_store_folder"] ??
+                                     throw new ArgumentNullException("db_files_store_folder");
+                    var filePath = Path.Combine(saveFolder, file.FileName);
+                    using var memoryStream = new MemoryStream();
+                    await using (var fileStream = File.OpenRead(filePath))
+                    {
+                        await fileStream.CopyToAsync(memoryStream);
+                    }
+
+                    memoryStream.Position = 0;
+                    using (var spreadsheetDocument = SpreadsheetDocument.Open(memoryStream, false))
+                    {
+                        var workbookPart = spreadsheetDocument.WorkbookPart ??
+                                           throw new ArgumentException("spreadsheetDocument.WorkbookPart");
+                        IEnumerable<Sheet>? sheets = workbookPart?.Workbook?.Sheets?.Elements<Sheet>();
+                        if (sheets == null)
+                        {
+                            logger.LogInformation("File {FileName} sheets is empty!", file.FileName);
+                            return;
+                        }
+
+                        List<string> sharedStrings = GetSharedString(workbookPart.SharedStringTablePart);
+                        logger.LogInformation("sharedStrings loaded");
+                        var cellFormats = workbookPart.WorkbookStylesPart.Stylesheet.CellFormats;
+                        var numberingFormats = workbookPart.WorkbookStylesPart.Stylesheet.NumberingFormats;
+
+                        foreach (var sheet in sheets)
+                        {
+                            var sheetName = GetSheetName(sheet);
+
+                            var processed = await database.DbProspects
+                                .Where(p => p.FileId == fileId && p.SheetName == sheetName)
+                                .MaxAsync(p => (long?)p.RowNumber) ?? 0;
+                            logger.LogInformation("Processing {SheetName} in file {FileName} from {Row}", sheetName,
+                                file.FileName, processed);
+
+                            var worksheetPart = workbookPart.GetPartById(sheet.Id.Value) as WorksheetPart;
+
+                            int currentRow = 1;
+                            long count = 0;
+                            List<string?> headersList = new List<string?>();
+                            var data = new List<string?>();
+                            bool skipRow = false;
+                            var prospects = new List<DbProspect>();
+
+                            //Open Stream
+                            OpenXmlReader reader = OpenXmlReader.Create(worksheetPart);
+                            int currentIndex = -1;
+                            while (reader.Read())
+                            {
+                                if (currentRow == 20350)
+                                {
+                                    var test = 1;
+                                }
+                                if (reader.ElementType == typeof(Row) && reader.IsStartElement)
+                                {
+                                    currentIndex = -1;
+                                    if (currentRow == 20350)
+                                    {
+                                        var test = 1;
+                                    }
+                                    var newRow = Convert.ToInt32(reader.Attributes[0].Value);
+                                    // Headers row
+                                    if (newRow == 2 && currentRow == 1)
+                                    {
+                                        var cleanData = CleanList(data);
+                                        if (cleanData.Count == 0)
+                                        {
+                                            logger.LogInformation("Row {CurrentRow} is empty. Finish sheet {SheetName}",
+                                                currentRow, sheetName);
+                                            break;
+                                        }
+
+                                        headersList.AddRange(cleanData);
+                                        data.Clear();
+                                        continue;
+                                    }
+
+                                    bool afterSkip = false;
+                                    if (newRow > 1 && currentRow <= processed)
+                                    {
+                                        count++;
+                                        skipRow = true;
+                                        logger.LogInformation("Skip Row {CurrentRow}", currentRow);
+                                        currentRow = newRow;
+                                        data.Clear();
+                                        continue;
+                                    }
+                                    else if (count > 0 &&
+                                             (currentRow == processed + 1))
+                                    {
+                                        afterSkip = true;
+                                        skipRow = false;
+                                    }
+                                    else
+                                    {
+                                        skipRow = false;
+                                    }
+
+                                    if (currentRow != newRow && afterSkip == false)
+                                    {
+                                        if (currentRow == 20350)
+                                        {
+                                            var test = 1;
+                                        }
+                                        var cleanData = CleanList(data);
+                                        if (cleanData.Count == 0)
+                                        {
+                                            logger.LogInformation("Row {CurrentRow} is empty. Finish sheet {SheetName}",
+                                                currentRow, sheetName);
+                                            break;
+                                        }
+
+                                        count++;
+                                        var prospect = GetProspect(cleanData, file, sheetName, currentRow);
+                                        if (!string.IsNullOrEmpty(prospect.Name) ||
+                                            !string.IsNullOrEmpty(prospect.Civilite) ||
+                                            !string.IsNullOrEmpty(prospect.Phone) ||
+                                            !string.IsNullOrEmpty(prospect.Zipcode))
+                                            prospects.Add(prospect);
+                                        if (prospects.Count >= 5000)
+                                        {
+                                            logger.LogInformation(
+                                                "Save batch for 5000 rows up to {CurrentRow} {SheetName} in file {FileName}",
+                                                currentRow, sheetName, file.FileName);
+                                            await SaveProspects(prospects);
+                                            prospects.Clear();
+                                        }
+
+                                        data.Clear();
+                                    }
+
+                                    currentRow = newRow;
+                                }
+                                else if (reader.ElementType == typeof(Cell))
+                                {
+                                    if (currentRow == 20350)
+                                    {
+                                        var test = 1;
+                                    }
+                                    //If a cell is empty, the cell node doesn't exist in XML.
+                                    Cell cellValue = (Cell)reader.LoadCurrentElement(); //this skip the EndElement
+
+                                    var index = Letters.IndexOf(cellValue.CellReference.Value.Replace(currentRow.ToString(), string.Empty));
+                                    // If previous column is empty
+                                    while (index > currentIndex + 1)
+                                    {
+                                        data.Add(null);
+                                        currentIndex++;
+                                    }
+                                    var text = GetCellValue(sharedStrings, cellFormats, numberingFormats, cellValue);
+
+                                    data.Add(text);
+                                    currentIndex = index;
+                                }
+
+                            }
+
+                            reader.Close();
+                            await SaveProspects(prospects);
+                            logger.LogInformation("Processing {SheetName} in file {FileName} finished", sheetName,
+                                file.FileName);
+
+                        }
+                    }
+
+                    await database.DbFiles.Where(f => f.Id == file.Id)
+                        .ExecuteUpdateAsync(setters => setters
+                            .SetProperty(f => f.CompletedDate, DateTime.UtcNow)
+                            .SetProperty(f => f.Exported, true));
+                    await database.SaveChangesAsync();
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Error while exporting db files for file {FIleName}", file.FileName);
+                    throw;
+                }
+            }
+
+            logger.LogInformation("Export db files script finished....");
+
+        async Task SaveProspects(IList<DbProspect> prospects)
+        {
+            if (prospects.Count == 0)
+                return;
+            await database.DbProspects.AddRangeAsync(prospects);
+            await database.SaveChangesAsync();
+        }
+
+        static DbProspect GetProspect(List<string?> content, DbFile file, string sheetName, long rowNumber)
+        {
+            var dbProspect = new DbProspect()
+            {
+                Id = Guid.CreateVersion7(),
+                FileId = file.Id,
+                SheetName = sheetName,
+                RowNumber = rowNumber,
+            };
+            dbProspect.Civilite = GetCivilite(GetData(file.CiviliteColumns, content));
+            dbProspect.Phone = GetData(file.PhoneColumns, content).Trim('|', ' ', '\'');
+            dbProspect.Zipcode = GetZipCode(GetData(file.ZipcodeColumns, content).Trim('|', ' ', '\''));
+            var name = GetData(file.NameColumns, content);
+            var firstName = GetData(file.FirstnameColumns, content);
+            var lastName = GetData(file.LastnameColumns, content);
+            if (!string.IsNullOrEmpty(name))
+                dbProspect.Name = name.Trim();
+            else if (!string.IsNullOrEmpty(firstName))
+            {
+                dbProspect.Name = firstName.Trim();
+                if (!string.IsNullOrEmpty(lastName))
+                    dbProspect.Name += " " + lastName.Trim();
+            }
+            
+            return dbProspect;
+        }
+
+        static string GetData(IList<int> columns, List<string?> content)
+        {
+            foreach (var column in columns)
+            {
+                if (column > -1 && content.Count > column)
+                {
+                    var data = content[column];
+                    if (!string.IsNullOrEmpty(data))
+                        return data;
+                }
+            }
+
+            return string.Empty;
+        }
+
+        static string GetCivilite(string? data)
+        {
+            if (string.IsNullOrEmpty(data))
+                return string.Empty;
+            var lower = data.ToLower();
+            if (lower.StartsWith("female") || lower.StartsWith("mme") || lower.StartsWith("madame"))
+                return "Mrs";
+            if (lower.StartsWith("male") || lower.StartsWith("monsieur") || lower.StartsWith("m"))
+                return "Mr";
+            return string.Empty;
+        }
+
+        static string GetZipCode(string? data)
+        {
+            if (string.IsNullOrEmpty(data))
+                return string.Empty;
+            if (data.Length == 5)
+                return data;
+            if (ZipCodeRegex.IsMatch(data))
+                return ZipCodeRegex.Match(data).Groups[0].Value;
+            return string.Empty;
+        }
+
+        static string GetSheetName(OpenXmlElement sheet)
+        {
+            foreach (OpenXmlAttribute attr in sheet.GetAttributes())
+            {
+                if (attr.LocalName == "name")
+                    return attr.Value ?? string.Empty;
+            }
+
+            return string.Empty;
+        }
+    }
+
+    public async Task ExportToCsv()
+    {
+        logger.LogInformation("Started export db prospects to csv script...");
+        try
+        {
+            var folder = configuration["db_export_files_store_folder"] ?? throw new ArgumentNullException("db_export_files_store_folder");
+            var zipCodes = await database.DbProspects
+                .Where(p => p.Phone != null && p.Phone != "")
+                .Select(p => p.Zipcode).Distinct().ToListAsync();
+            foreach (var group in zipCodes.GroupBy(v => v?.Substring(0,Math.Min(2, v?.Length ?? 0))))
+            {
+                var key = group.Key;
+                logger.LogInformation("Started export {Group} zipcodes to csv script...", group.Key);
+                var dirName = key?.Replace("/", "").Replace("\\", "").Replace(".", "");
+                if (string.IsNullOrEmpty(dirName))
+                    dirName = "empty";
+                var directory = Path.Combine(folder, dirName);
+                if (!Directory.Exists(directory))
+                    Directory.CreateDirectory(directory);
+                var query = database.DbProspects.AsQueryable();
+                if (string.IsNullOrEmpty(key))
+                    query = query.Where(v => v.Zipcode == "" || v.Zipcode == null);
+                else
+                    query = query.Where(v => v.Zipcode.StartsWith(key));
+                var allProspects = (await query
+                    .Where(p => p.Phone != null && p.Phone != "")
+                    .OrderBy(p => p.Zipcode)
+                    .ThenBy(p => p.Phone)
+                    .Select(p => new ProspectCsv(p.Civilite, p.Name, p.Phone, p.Zipcode != null ? (p.Zipcode) : null))
+                    .ToListAsync()
+                    ).DistinctBy(p => p.Phone)
+                    .ToList();
+                var iteration = 0;
+                bool hasMore = false;
+                do
+                {
+                    var fileName = $"{dirName}xxx{(iteration > 0 ? ("_" + iteration.ToString("0000")) : "")}.csv";
+                    var prospects = allProspects
+                        .Skip(iteration * 4999)
+                        .Take(4999)
+                        .ToList();
+                    if (prospects.Any())
+                    {
+                        await using var writer = new StreamWriter(Path.Combine(directory, fileName));
+                        await using var csv = new CsvWriter(writer, CultureInfo.CurrentCulture);
+                        await csv.WriteRecordsAsync(prospects);
+                        logger.LogInformation("Exported {File}", fileName);
+                    }
+
+                    hasMore = prospects.Count == 4999;
+                    iteration++;
+                } while (hasMore);
+
+                logger.LogInformation("Finished export {Group} zipcodes to csv script...", group.Key);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error while exporting csv files");
+            throw;
+        }
+        logger.LogInformation("Finished export db prospects to csv script...");
+    }
+    
+    private static string? GetCellValue(List<string> sharedStringTable, CellFormats? cellFormats,
+        NumberingFormats? numberingFormats, Cell cell)
+    {
+        string? value = cell.CellValue?.InnerText;
+        if (string.IsNullOrEmpty(value))
+            return value;
+        if (cell.DataType != null)
+        {
+            if (cell.DataType.Value == CellValues.SharedString)
+            {
+                var content = sharedStringTable.ElementAt(int.Parse(value));
+                return content;
+            }
+            else if (cell.DataType.Value == CellValues.Boolean)
+            {
+                switch (value)
+                {
+                    case "0":
+                        value = "FALSE";
+                        break;
+                    default:
+                        value = "TRUE";
+                        break;
+                }
+
+                return value;
+            }
+            else if (cell.DataType.Value == CellValues.Number)
+            {
+                value = GetNumberValueWithFormating(value);
+            }
+        }
+        else if (cell.StyleIndex != null && cell.StyleIndex.HasValue && numberingFormats != null && cellFormats != null)
+        {
+            value = GetNumberValueWithFormating(value);
+        }
+
+        return value;
+
+        string GetNumberValueWithFormating(string val)
+        {
+            // look up the style used for the cell
+            int formatStyleIndex = Convert.ToInt32(cell.StyleIndex.Value);
+            var cf = (CellFormat)cellFormats.ElementAt(formatStyleIndex);
+
+            if (cf.NumberFormatId != null)
+            {
+                var numberFormatId = cf.NumberFormatId.Value;
+                var numberingFormat = numberingFormats.Cast<NumberingFormat>()
+                    .SingleOrDefault(f => f.NumberFormatId.Value == numberFormatId);
+
+                var format = numberingFormat?.FormatCode?.Value;
+                if (long.TryParse(val, out var number))
+                    val = number.ToString(format ?? string.Empty);
+                else if (decimal.TryParse(val, out var decimalNumber))
+                    val = decimalNumber.ToString(format ?? string.Empty);
+                else if (double.TryParse(val, out var doubleNumber))
+                    val = doubleNumber.ToString(format ?? string.Empty);
+            }
+
+            return val;
+        }
+    }
+
+    private static List<string?> GetCleanRowData(List<string> sharedStringTable, CellFormats? cellFormats,
+        NumberingFormats? numberingFormats, Row row, string? telephoneColumnName)
+    {
+        var list = new List<string?>();
+        foreach (var c in row.Descendants<Cell>())
+        {
+            var text = GetCellValue(sharedStringTable, cellFormats, numberingFormats, c);
+            if (telephoneColumnName != null && telephoneColumnName == text)
+                text = "Téléphone";
+            list.Add(text);
+        }
+
+        return CleanList(list);
+    }
+
+    private static List<string?> CleanList(List<string?> list)
+    {
+        if (list.Count == 0)
+            return [];
+        var last = list.Last();
+        while (last == null)
+        {
+            list.RemoveAt(list.Count - 1);
+            if (list.Count == 0)
+                return [];
+            last = list.Last();
+        }
+
+        return list;
+    }
+    
+    private static List<string> GetSharedString(SharedStringTablePart sharedStringTablePart)
+    {
+        List<string> sharedStrings = new List<string>();
+        if (sharedStringTablePart != null)
+        {
+            foreach (SharedStringItem item in sharedStringTablePart.SharedStringTable.Elements<SharedStringItem>())
+            {
+                sharedStrings.Add(item.InnerText);
+            }
+        }
+        return sharedStrings;
+    }
+}

@@ -17,4 +17,7 @@ public class Prospect
     public Spreadsheet? Spreadsheet { get; set; }
     public Guid ImportId { get; set; }
     public Import Import { get; set; }
+    public long? ProspectId { get; set; }
+    public bool Disabled { get; set; }
+    public long? LeadId { get; set; }
 }

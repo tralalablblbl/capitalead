@@ -3,6 +3,7 @@ using System;
 using Capitalead.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,102 +12,18 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Capitalead.Migrations
 {
     [DbContext(typeof(AppDatabase))]
-    partial class AppDatabaseModelSnapshot : ModelSnapshot
+    [Migration("20240323154719_AddKpiProspectsTable")]
+    partial class AddKpiProspectsTable
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "9.0.0")
+                .HasAnnotation("ProductVersion", "8.0.3")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
-
-            modelBuilder.Entity("Capitalead.Data.DbFile", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.PrimitiveCollection<int[]>("CiviliteColumns")
-                        .IsRequired()
-                        .HasColumnType("integer[]");
-
-                    b.Property<DateTime?>("CompletedDate")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime>("Created")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("Exported")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("FileName")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.PrimitiveCollection<int[]>("FirstnameColumns")
-                        .IsRequired()
-                        .HasColumnType("integer[]");
-
-                    b.PrimitiveCollection<int[]>("LastnameColumns")
-                        .IsRequired()
-                        .HasColumnType("integer[]");
-
-                    b.PrimitiveCollection<int[]>("NameColumns")
-                        .IsRequired()
-                        .HasColumnType("integer[]");
-
-                    b.PrimitiveCollection<int[]>("PhoneColumns")
-                        .IsRequired()
-                        .HasColumnType("integer[]");
-
-                    b.Property<bool>("ReadyForExport")
-                        .HasColumnType("boolean");
-
-                    b.PrimitiveCollection<int[]>("ZipcodeColumns")
-                        .IsRequired()
-                        .HasColumnType("integer[]");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("DbFiles");
-                });
-
-            modelBuilder.Entity("Capitalead.Data.DbProspect", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Civilite")
-                        .HasColumnType("text");
-
-                    b.Property<Guid>("FileId")
-                        .HasColumnType("uuid");
-
-                    b.Property<string>("Name")
-                        .HasColumnType("text");
-
-                    b.Property<string>("Phone")
-                        .HasColumnType("text");
-
-                    b.Property<long>("RowNumber")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("SheetName")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("Zipcode")
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("FileId");
-
-                    b.ToTable("DbProspects");
-                });
 
             modelBuilder.Entity("Capitalead.Data.DuplicateProspect", b =>
                 {
@@ -114,7 +31,7 @@ namespace Capitalead.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.PrimitiveCollection<string[]>("Content")
+                    b.Property<string[]>("Content")
                         .IsRequired()
                         .HasColumnType("text[]");
 
@@ -134,69 +51,6 @@ namespace Capitalead.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("DuplicateProspects");
-                });
-
-            modelBuilder.Entity("Capitalead.Data.ExportedSpreadsheet", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("FileId")
-                        .HasColumnType("uuid");
-
-                    b.Property<long>("SheetId")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("Title")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<long?>("UserId")
-                        .HasColumnType("bigint");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("FileId");
-
-                    b.HasIndex("UserId");
-
-                    b.ToTable("ExportedSpreadsheets");
-                });
-
-            modelBuilder.Entity("Capitalead.Data.FileForExport", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<DateTime?>("CompletedDate")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<DateTime>("Created")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("Exported")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("FileId")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("FileName")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("MimeType")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("FileName")
-                        .IsUnique();
-
-                    b.ToTable("FilesForExport");
                 });
 
             modelBuilder.Entity("Capitalead.Data.Import", b =>
@@ -316,29 +170,6 @@ namespace Capitalead.Migrations
                     b.ToTable("Prospects");
                 });
 
-            modelBuilder.Entity("Capitalead.Data.SheetFromFile", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid");
-
-                    b.Property<Guid>("FileId")
-                        .HasColumnType("uuid");
-
-                    b.Property<long>("ProcessedCount")
-                        .HasColumnType("bigint");
-
-                    b.Property<string>("SheetName")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("FileId");
-
-                    b.ToTable("SheetsFromFiles");
-                });
-
             modelBuilder.Entity("Capitalead.Data.Spreadsheet", b =>
                 {
                     b.Property<long>("Id")
@@ -417,34 +248,6 @@ namespace Capitalead.Migrations
                     b.ToTable("Users");
                 });
 
-            modelBuilder.Entity("Capitalead.Data.DbProspect", b =>
-                {
-                    b.HasOne("Capitalead.Data.DbFile", "File")
-                        .WithMany("Prospects")
-                        .HasForeignKey("FileId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("File");
-                });
-
-            modelBuilder.Entity("Capitalead.Data.ExportedSpreadsheet", b =>
-                {
-                    b.HasOne("Capitalead.Data.FileForExport", "File")
-                        .WithMany("Spreadsheets")
-                        .HasForeignKey("FileId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("Capitalead.Data.User", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId");
-
-                    b.Navigation("File");
-
-                    b.Navigation("User");
-                });
-
             modelBuilder.Entity("Capitalead.Data.Prospect", b =>
                 {
                     b.HasOne("Capitalead.Data.Import", "Import")
@@ -462,17 +265,6 @@ namespace Capitalead.Migrations
                     b.Navigation("Spreadsheet");
                 });
 
-            modelBuilder.Entity("Capitalead.Data.SheetFromFile", b =>
-                {
-                    b.HasOne("Capitalead.Data.FileForExport", "File")
-                        .WithMany("ProcessedSheets")
-                        .HasForeignKey("FileId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("File");
-                });
-
             modelBuilder.Entity("Capitalead.Data.Spreadsheet", b =>
                 {
                     b.HasOne("Capitalead.Data.User", "User")
@@ -480,18 +272,6 @@ namespace Capitalead.Migrations
                         .HasForeignKey("UserId");
 
                     b.Navigation("User");
-                });
-
-            modelBuilder.Entity("Capitalead.Data.DbFile", b =>
-                {
-                    b.Navigation("Prospects");
-                });
-
-            modelBuilder.Entity("Capitalead.Data.FileForExport", b =>
-                {
-                    b.Navigation("ProcessedSheets");
-
-                    b.Navigation("Spreadsheets");
                 });
 
             modelBuilder.Entity("Capitalead.Data.Import", b =>

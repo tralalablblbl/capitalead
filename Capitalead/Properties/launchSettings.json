@@ -14,13 +14,16 @@
       "dotnetRunMessages": true,
       "launchBrowser": false,
       "launchUrl": "swagger",
-      "applicationUrl": "http://localhost:5298",
+      "applicationUrl": "http://localhost:5299",
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development",
         "ConnectionString__Default": "Host=localhost;Database=capitalead;Port=5432;User Id=postgres;Password=postgres;Pooling=true;Timeout=30;Command Timeout=0;Internal Command Timeout=-1;Minimum Pool Size=1;Maximum Pool Size=50;Connection Idle Lifetime=300;Connection Pruning Interval=10;",
         "lobstr_auth_token": "",
         "nocrm_auth_token": "",
         "nocrm_user_email": "contact@airthermo.fr",
+        "files_store_folder": "/Users/trala/work/capitalead/files",
+        "db_files_store_folder": "/Users/trala/work/capitalead/databases",
+        "db_export_files_store_folder": "/Users/trala/work/capitalead/databases_export",
         //"run_migration_cron": "0 0 9 * * *"
         "run_migration_cron": "none",
         //"run_calculate_kpi": "15 9-22 * * *"

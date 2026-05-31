@@ -1,4 +1,4 @@
-@Capitalead_HostAddress = http://localhost:5298
+@Capitalead_HostAddress = http://localhost:5299
 
 GET {{Capitalead_HostAddress}}/api/v1/run
 Accept: application/json
@@ -21,5 +21,25 @@ Accept: application/json
 ###
 
 GET {{Capitalead_HostAddress}}/api/v1/calculate-kpi
+Accept: application/json
+###
+
+GET {{Capitalead_HostAddress}}/api/v1/download-files
+Accept: application/json
+###
+
+GET {{Capitalead_HostAddress}}/api/v1/export-file/leads telco fr 1.6M (1).xlsx
+Accept: application/json
+###
+
+GET {{Capitalead_HostAddress}}/api/v1/create-db-files
+Accept: application/json
+###
+
+GET {{Capitalead_HostAddress}}/api/v1/export-db-files
+Accept: application/json
+###
+
+GET {{Capitalead_HostAddress}}/api/v1/export-to-csv
 Accept: application/json
 ###

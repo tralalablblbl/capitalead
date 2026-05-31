@@ -51,4 +51,10 @@ public static class Helper
 
         return jsonObject;
     }
+
+    public static NoCrmCreateSpreadsheetRequest BuildJsonBodyForCreatingProspList(string listTitle, string[] tags, string nocrmUserEmail,
+        List<List<string>> content)
+    {
+        return new NoCrmCreateSpreadsheetRequest(tags, listTitle, content, listTitle, nocrmUserEmail);
+    }
 }

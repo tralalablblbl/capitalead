@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 using Capitalead.Data;
@@ -53,7 +54,7 @@ public class NoCrmService
         // Load data to new sheets
         while (unloadedProspects.Any())
         {
-            var index = lastSheet.Tags.Length == 2 ? 0 : int.Parse(lastSheet.Tags[CLUSTER_INDEX_TAG_POSITION]);
+            var index = GetSheetNumber(lastSheet);
             index++;
             var canUpload = 4999;
             var toUpload = unloadedProspects.Take(Math.Min(canUpload, unloadedProspects.Count)).ToArray();
@@ -76,8 +77,17 @@ public class NoCrmService
 
         NoCrmSpreadsheet GetLastSheet()
         {
-            return sheets.OrderByDescending(s => s.Tags.Length == 2 ? 0 : int.Parse(s.Tags[CLUSTER_INDEX_TAG_POSITION])).First();
+            return sheets.OrderByDescending(s => GetSheetNumber(s)).First();
         }
+    }
+
+    private int GetSheetNumber(NoCrmSpreadsheet sheet)
+    {
+        if (sheet.Tags.Length > 2 && int.TryParse(sheet.Tags[CLUSTER_INDEX_TAG_POSITION], out var number))
+            return number;
+        if (int.TryParse(sheet.Title.Split(' ').LastOrDefault(), out number))
+            return number;
+        return 0;
     }
 
     public async Task<NoCrmSpreadsheet> CreateNewProspectingList(string listTitle, string[] tags, JsonNode[]? prospects)
@@ -143,7 +153,7 @@ public class NoCrmService
             $"Error occurred while listing all prospecting lists ToMigrate!, status: {response.StatusCode}, error: {await response.Content.ReadAsStringAsync()}");
     }
 
-    public async Task<NoCrmSpreadsheet> RetrieveTheProspectingList(long listId)
+    public async Task<NoCrmSpreadsheet?> RetrieveTheProspectingList(long listId)
     {
         var client = GetClient();
         var response = await client.GetAsync($"{SPREADSHEETS_URL}/{listId}");
@@ -154,6 +164,11 @@ public class NoCrmService
         }
         else
         {
+            if (response.StatusCode == HttpStatusCode.NotFound)
+            {
+                _logger.LogInformation("Prospecting list {ListId} was not found!", listId);
+                return null;
+            }
             _logger.LogError("Error occurred while retrieving prospecting list {ListId}!", listId);
             throw new ApplicationException(
                 $"Error occurred while retrieving prospecting list  {listId} !, status: {response.StatusCode}, error: {await response.Content.ReadAsStringAsync()}");
@@ -233,7 +248,7 @@ public class NoCrmService
         }
     }
 
-    private async Task<NoCrmSpreadsheet> CreateProspectingList(JsonObject body)
+    public async Task<NoCrmSpreadsheet> CreateProspectingList(JsonObject body)
     {
         var client = GetClient();
 
@@ -249,8 +264,31 @@ public class NoCrmService
         throw new NotSupportedException();
     }
 
+    public async Task<NoCrmSpreadsheet> CreateProspectingList(NoCrmCreateSpreadsheetRequest body)
+    {
+        var client = GetClient();
+
+        var response = await client.PostAsJsonAsync(SPREADSHEETS_URL, body);
+        if (response.IsSuccessStatusCode)
+        {
+            _logger.LogInformation("Successfully created new prospecting list!");
+            return await response.Content.ReadFromJsonAsync<NoCrmSpreadsheet>() ?? throw new ArgumentNullException();
+        }
+        _logger.LogError("Error occurred while creating prospecting list {List}! Body: {Body}, Error: {Error}",
+            PROSPECTING_LIST_TITLE, body.ToString(), await response.Content.ReadAsStringAsync());
+        response.EnsureSuccessStatusCode();
+        throw new NotSupportedException();
+    }
+
     private HttpClient GetClient() => _httpClientFactory.CreateClient(nameof(NoCrmService));
 }
+
+public record struct NoCrmCreateSpreadsheetRequest(
+    [property: JsonPropertyName("tags")] string[] Tags,
+    [property: JsonPropertyName("title")] string Title,
+    [property: JsonPropertyName("content")] List<List<string>> Content,
+    [property: JsonPropertyName("description")] string Description,
+    [property: JsonPropertyName("user_id")] string UserId);
 
 public record NoCrmSpreadsheet(
     long Id,
@@ -264,7 +302,7 @@ public record NoCrmProspect(
     long Id,
     [property: JsonPropertyName("is_active")]bool IsActive,
     [property: JsonPropertyName("lead_id")]long? LeadId,
-    JsonNode[] Content,
+    JsonNode?[] Content,
     [property: JsonPropertyName("spreadsheet_id")] long? SpreadsheetId);
 public record NoCrmUser(
     long Id,

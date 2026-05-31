@@ -3,6 +3,7 @@ using System;
 using Capitalead.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Capitalead.Migrations
 {
     [DbContext(typeof(AppDatabase))]
-    partial class AppDatabaseModelSnapshot : ModelSnapshot
+    [Migration("20250113054141_ChangeNameColumn")]
+    partial class ChangeNameColumn
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -28,9 +31,8 @@ namespace Capitalead.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.PrimitiveCollection<int[]>("CiviliteColumns")
-                        .IsRequired()
-                        .HasColumnType("integer[]");
+                    b.Property<int>("CiviliteColumn")
+                        .HasColumnType("integer");
 
                     b.Property<DateTime?>("CompletedDate")
                         .HasColumnType("timestamp with time zone");
@@ -45,28 +47,23 @@ namespace Capitalead.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.PrimitiveCollection<int[]>("FirstnameColumns")
-                        .IsRequired()
-                        .HasColumnType("integer[]");
+                    b.Property<int>("FirstnameColumn")
+                        .HasColumnType("integer");
 
-                    b.PrimitiveCollection<int[]>("LastnameColumns")
-                        .IsRequired()
-                        .HasColumnType("integer[]");
+                    b.Property<int>("LastnameColumn")
+                        .HasColumnType("integer");
 
-                    b.PrimitiveCollection<int[]>("NameColumns")
-                        .IsRequired()
-                        .HasColumnType("integer[]");
+                    b.Property<int>("NameColumn")
+                        .HasColumnType("integer");
 
-                    b.PrimitiveCollection<int[]>("PhoneColumns")
-                        .IsRequired()
-                        .HasColumnType("integer[]");
+                    b.Property<int>("PhoneColumn")
+                        .HasColumnType("integer");
 
                     b.Property<bool>("ReadyForExport")
                         .HasColumnType("boolean");
 
-                    b.PrimitiveCollection<int[]>("ZipcodeColumns")
-                        .IsRequired()
-                        .HasColumnType("integer[]");
+                    b.Property<int>("ZipcodeColumn")
+                        .HasColumnType("integer");
 
                     b.HasKey("Id");
 

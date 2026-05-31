@@ -107,6 +107,10 @@ public class LobstrService
             if (error.Errors.Type == "ClusterDoesNotExistException")
                 return null;
         }
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return null;
+        }
         response.EnsureSuccessStatusCode();
         var cluster = await response.Content.ReadFromJsonAsync<Cluster>() ??
                    throw new ArgumentNullException();

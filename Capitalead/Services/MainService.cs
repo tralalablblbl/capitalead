@@ -45,7 +45,7 @@ public class MainService
 
         var import = new Import()
         {
-            Id = Guid.NewGuid(),
+            Id = Guid.CreateVersion7(),
             Started = DateTime.UtcNow,
             Status = RunStatus.InProgress
         };
