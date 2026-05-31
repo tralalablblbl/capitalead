@@ -54,7 +54,7 @@ public class NoCrmService
         // Load data to new sheets
         while (unloadedProspects.Any())
         {
-            var index = lastSheet.Tags.Length == 2 ? 0 : int.Parse(lastSheet.Tags[CLUSTER_INDEX_TAG_POSITION]);
+            var index = GetSheetNumber(lastSheet);
             index++;
             var canUpload = 4999;
             var toUpload = unloadedProspects.Take(Math.Min(canUpload, unloadedProspects.Count)).ToArray();
@@ -77,8 +77,17 @@ public class NoCrmService
 
         NoCrmSpreadsheet GetLastSheet()
         {
-            return sheets.OrderByDescending(s => s.Tags.Length == 2 ? 0 : int.Parse(s.Tags[CLUSTER_INDEX_TAG_POSITION])).First();
+            return sheets.OrderByDescending(s => GetSheetNumber(s)).First();
         }
+    }
+
+    private int GetSheetNumber(NoCrmSpreadsheet sheet)
+    {
+        if (sheet.Tags.Length > 2 && int.TryParse(sheet.Tags[CLUSTER_INDEX_TAG_POSITION], out var number))
+            return number;
+        if (int.TryParse(sheet.Title.Split(' ').LastOrDefault(), out number))
+            return number;
+        return 0;
     }
 
     public async Task<NoCrmSpreadsheet> CreateNewProspectingList(string listTitle, string[] tags, JsonNode[]? prospects)
@@ -293,7 +302,7 @@ public record NoCrmProspect(
     long Id,
     [property: JsonPropertyName("is_active")]bool IsActive,
     [property: JsonPropertyName("lead_id")]long? LeadId,
-    JsonNode[] Content,
+    JsonNode?[] Content,
     [property: JsonPropertyName("spreadsheet_id")] long? SpreadsheetId);
 public record NoCrmUser(
     long Id,

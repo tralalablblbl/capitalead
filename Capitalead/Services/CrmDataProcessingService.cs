@@ -538,10 +538,10 @@ public class CrmDataProcessingService
                     }
                     else
                     {
-                        var parsingDate = DateTime.TryParseExact(row.Content[1].ToString(), "dd/MM/yyyy",
+                        var parsingDate = DateTime.TryParseExact(row.Content[1]?.ToString(), "dd/MM/yyyy",
                             CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var date)
                             ? date.ToUniversalTime()
-                            : DateTime.UtcNow;
+                            : DateTime.UtcNow.Date;
                         var apartment = new Prospect();
                         apartment.Id = Guid.CreateVersion7();
                         apartment.Neighbourhood = row.Content[0]?.ToString() ?? string.Empty;
